@@ -1,7 +1,7 @@
 <?php
 defined('ABSPATH') || exit;
 
-class DUI_Scanner {
+class OMC_Scanner {
 
     private $used_ids = [];
     private $path_cache = [];

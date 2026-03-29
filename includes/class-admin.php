@@ -1,91 +1,91 @@
 <?php
 defined('ABSPATH') || exit;
 
-class DUI_Admin {
+class OMC_Admin {
 
     public static function init() {
         add_action('admin_menu', [__CLASS__, 'add_menu']);
         add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_assets']);
 
         // AJAX handlers
-        add_action('wp_ajax_dui_start_scan', [__CLASS__, 'ajax_start_scan']);
-        add_action('wp_ajax_dui_scan_batch', [__CLASS__, 'ajax_scan_batch']);
-        add_action('wp_ajax_dui_get_results', [__CLASS__, 'ajax_get_results']);
-        add_action('wp_ajax_dui_trash_single', [__CLASS__, 'ajax_trash_single']);
-        add_action('wp_ajax_dui_trash_bulk', [__CLASS__, 'ajax_trash_bulk']);
-        add_action('wp_ajax_dui_trash_all_batch', [__CLASS__, 'ajax_trash_all_batch']);
-        add_action('wp_ajax_dui_delete_single', [__CLASS__, 'ajax_delete_single']);
-        add_action('wp_ajax_dui_delete_bulk', [__CLASS__, 'ajax_delete_bulk']);
-        add_action('wp_ajax_dui_whitelist_single', [__CLASS__, 'ajax_whitelist_single']);
-        add_action('wp_ajax_dui_whitelist_bulk', [__CLASS__, 'ajax_whitelist_bulk']);
-        add_action('wp_ajax_dui_remove_whitelist', [__CLASS__, 'ajax_remove_whitelist']);
-        add_action('wp_ajax_dui_remove_whitelist_bulk', [__CLASS__, 'ajax_remove_whitelist_bulk']);
-        add_action('wp_ajax_dui_restore_single', [__CLASS__, 'ajax_restore_single']);
-        add_action('wp_ajax_dui_restore_bulk', [__CLASS__, 'ajax_restore_bulk']);
-        add_action('wp_ajax_dui_save_cron_settings', [__CLASS__, 'ajax_save_cron_settings']);
-        add_action('wp_ajax_dui_empty_trash_batch', [__CLASS__, 'ajax_empty_trash_batch']);
+        add_action('wp_ajax_omc_start_scan', [__CLASS__, 'ajax_start_scan']);
+        add_action('wp_ajax_omc_scan_batch', [__CLASS__, 'ajax_scan_batch']);
+        add_action('wp_ajax_omc_get_results', [__CLASS__, 'ajax_get_results']);
+        add_action('wp_ajax_omc_trash_single', [__CLASS__, 'ajax_trash_single']);
+        add_action('wp_ajax_omc_trash_bulk', [__CLASS__, 'ajax_trash_bulk']);
+        add_action('wp_ajax_omc_trash_all_batch', [__CLASS__, 'ajax_trash_all_batch']);
+        add_action('wp_ajax_omc_delete_single', [__CLASS__, 'ajax_delete_single']);
+        add_action('wp_ajax_omc_delete_bulk', [__CLASS__, 'ajax_delete_bulk']);
+        add_action('wp_ajax_omc_whitelist_single', [__CLASS__, 'ajax_whitelist_single']);
+        add_action('wp_ajax_omc_whitelist_bulk', [__CLASS__, 'ajax_whitelist_bulk']);
+        add_action('wp_ajax_omc_remove_whitelist', [__CLASS__, 'ajax_remove_whitelist']);
+        add_action('wp_ajax_omc_remove_whitelist_bulk', [__CLASS__, 'ajax_remove_whitelist_bulk']);
+        add_action('wp_ajax_omc_restore_single', [__CLASS__, 'ajax_restore_single']);
+        add_action('wp_ajax_omc_restore_bulk', [__CLASS__, 'ajax_restore_bulk']);
+        add_action('wp_ajax_omc_save_cron_settings', [__CLASS__, 'ajax_save_cron_settings']);
+        add_action('wp_ajax_omc_empty_trash_batch', [__CLASS__, 'ajax_empty_trash_batch']);
 
         // Cron hook
-        add_action('dui_scheduled_cleanup', [__CLASS__, 'run_scheduled_cleanup']);
+        add_action('omc_scheduled_cleanup', [__CLASS__, 'run_scheduled_cleanup']);
     }
 
     public static function activate() {
-        update_option('dui_version', DUI_VERSION);
+        update_option('omc_version', OMC_VERSION);
         // Initialize whitelist as empty
-        if (false === get_option('dui_whitelist')) {
-            update_option('dui_whitelist', [], false);
+        if (false === get_option('omc_whitelist')) {
+            update_option('omc_whitelist', [], false);
         }
     }
 
     public static function deactivate() {
-        delete_option('dui_scan_results');
-        delete_option('dui_scan_used_ids');
-        delete_option('dui_scan_date');
-        wp_clear_scheduled_hook('dui_scheduled_cleanup');
+        delete_option('omc_scan_results');
+        delete_option('omc_scan_used_ids');
+        delete_option('omc_scan_date');
+        wp_clear_scheduled_hook('omc_scheduled_cleanup');
     }
 
     public static function add_menu() {
         add_submenu_page(
             'upload.php',
-            __('Delete Unused Images', 'delete-unused-images'),
-            __('Unused Images', 'delete-unused-images'),
+            __('Oli Media Cleaner', 'oli-media-cleaner'),
+            __('Media Cleaner', 'oli-media-cleaner'),
             'manage_options',
-            'delete-unused-images',
+            'oli-media-cleaner',
             [__CLASS__, 'render_page']
         );
     }
 
     public static function enqueue_assets($hook) {
-        if ($hook !== 'media_page_delete-unused-images') return;
+        if ($hook !== 'media_page_oli-media-cleaner') return;
 
         wp_enqueue_style(
-            'dui-admin-css',
-            DUI_PLUGIN_URL . 'assets/css/admin.css',
+            'omc-admin-css',
+            OMC_PLUGIN_URL . 'assets/css/admin.css',
             [],
-            DUI_VERSION
+            OMC_VERSION
         );
 
         wp_enqueue_script(
-            'dui-admin-js',
-            DUI_PLUGIN_URL . 'assets/js/admin.js',
+            'omc-admin-js',
+            OMC_PLUGIN_URL . 'assets/js/admin.js',
             ['jquery'],
-            DUI_VERSION,
+            OMC_VERSION,
             true
         );
 
-        wp_localize_script('dui-admin-js', 'duiObj', [
+        wp_localize_script('omc-admin-js', 'omcObj', [
             'ajaxurl' => admin_url('admin-ajax.php'),
-            'nonce'   => wp_create_nonce('dui_nonce'),
+            'nonce'   => wp_create_nonce('omc_nonce'),
             'strings' => [
-                'scanning'       => __('Scanning...', 'delete-unused-images'),
-                'scan_complete'  => __('Scan complete!', 'delete-unused-images'),
-                'confirm_trash'  => __('Trash this file?', 'delete-unused-images'),
-                'confirm_delete' => __('Permanently delete this file? This cannot be undone.', 'delete-unused-images'),
-                'confirm_bulk_trash'  => __('Trash all selected files?', 'delete-unused-images'),
-                'confirm_bulk_delete' => __('Permanently delete all selected files? This cannot be undone.', 'delete-unused-images'),
-                'no_selection'        => __('No files selected.', 'delete-unused-images'),
-                'confirm_trash_all'   => __('Trash ALL unused images? This will process all pages in batches.', 'delete-unused-images'),
-                'confirm_empty_trash' => __('Permanently delete ALL trashed files? This cannot be undone.', 'delete-unused-images'),
+                'scanning'       => __('Scanning...', 'oli-media-cleaner'),
+                'scan_complete'  => __('Scan complete!', 'oli-media-cleaner'),
+                'confirm_trash'  => __('Trash this file?', 'oli-media-cleaner'),
+                'confirm_delete' => __('Permanently delete this file? This cannot be undone.', 'oli-media-cleaner'),
+                'confirm_bulk_trash'  => __('Trash all selected files?', 'oli-media-cleaner'),
+                'confirm_bulk_delete' => __('Permanently delete all selected files? This cannot be undone.', 'oli-media-cleaner'),
+                'no_selection'        => __('No files selected.', 'oli-media-cleaner'),
+                'confirm_trash_all'   => __('Trash ALL unused images? This will process all pages in batches.', 'oli-media-cleaner'),
+                'confirm_empty_trash' => __('Permanently delete ALL trashed files? This cannot be undone.', 'oli-media-cleaner'),
             ],
         ]);
     }
@@ -95,78 +95,78 @@ class DUI_Admin {
     public static function render_page() {
         if (!current_user_can('manage_options')) return;
 
-        $scan_date = get_option('dui_scan_date', '');
+        $scan_date = get_option('omc_scan_date', '');
         $tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'unused';
-        $whitelist = get_option('dui_whitelist', []);
-        $base_url = admin_url('upload.php?page=delete-unused-images');
+        $whitelist = get_option('omc_whitelist', []);
+        $base_url = admin_url('upload.php?page=oli-media-cleaner');
         ?>
         <div class="wrap">
-            <h1><?php esc_html_e('Delete Unused Images', 'delete-unused-images'); ?></h1>
+            <h1><?php esc_html_e('Oli Media Cleaner', 'oli-media-cleaner'); ?></h1>
 
             <div class="postbox" style="margin-top:20px;">
-                <div class="inside" id="dui-stats">
+                <div class="inside" id="omc-stats">
                     <?php self::render_stats(); ?>
                 </div>
             </div>
 
             <p>
-                <button type="button" id="dui-scan-btn" class="button button-primary">
-                    <?php esc_html_e('Scan for Unused Media', 'delete-unused-images'); ?>
+                <button type="button" id="omc-scan-btn" class="button button-primary">
+                    <?php esc_html_e('Scan for Unused Media', 'oli-media-cleaner'); ?>
                 </button>
                 <?php if ($scan_date): ?>
                     <span class="description" style="margin-left:10px;">
                         <?php
                         /* translators: %s: date and time of last scan */
-                        printf( esc_html__( 'Last scan: %s', 'delete-unused-images' ), esc_html( date_i18n( 'M j, Y g:i a', strtotime( $scan_date ) ) ) );
+                        printf( esc_html__( 'Last scan: %s', 'oli-media-cleaner' ), esc_html( date_i18n( 'M j, Y g:i a', strtotime( $scan_date ) ) ) );
                         ?>
                     </span>
                 <?php endif; ?>
             </p>
 
-            <div id="dui-progress-wrap" style="display:none;margin-bottom:15px;">
+            <div id="omc-progress-wrap" style="display:none;margin-bottom:15px;">
                 <div style="background:#e0e0e0;height:20px;border-radius:3px;overflow:hidden;max-width:500px;">
-                    <div id="dui-progress-fill" style="background:#2271b1;height:100%;width:0%;transition:width .3s;"></div>
+                    <div id="omc-progress-fill" style="background:#2271b1;height:100%;width:0%;transition:width .3s;"></div>
                 </div>
-                <p class="description" id="dui-progress-text">0%</p>
+                <p class="description" id="omc-progress-text">0%</p>
             </div>
 
             <nav class="nav-tab-wrapper">
                 <a href="<?php echo esc_url($base_url . '&tab=unused'); ?>"
                    class="nav-tab <?php echo $tab === 'unused' ? 'nav-tab-active' : ''; ?>">
-                    <?php esc_html_e('Unused', 'delete-unused-images'); ?>
-                    <span class="count" id="dui-unused-count">(0)</span>
+                    <?php esc_html_e('Unused', 'oli-media-cleaner'); ?>
+                    <span class="count" id="omc-unused-count">(0)</span>
                 </a>
                 <a href="<?php echo esc_url($base_url . '&tab=whitelist'); ?>"
                    class="nav-tab <?php echo $tab === 'whitelist' ? 'nav-tab-active' : ''; ?>">
-                    <?php esc_html_e('Whitelist', 'delete-unused-images'); ?>
-                    <span class="count" id="dui-whitelist-count">(<?php echo count($whitelist); ?>)</span>
+                    <?php esc_html_e('Whitelist', 'oli-media-cleaner'); ?>
+                    <span class="count" id="omc-whitelist-count">(<?php echo count($whitelist); ?>)</span>
                 </a>
                 <a href="<?php echo esc_url($base_url . '&tab=trash'); ?>"
                    class="nav-tab <?php echo $tab === 'trash' ? 'nav-tab-active' : ''; ?>">
-                    <?php esc_html_e('Trash', 'delete-unused-images'); ?>
-                    <span class="count" id="dui-trash-count">(<?php echo esc_html( wp_count_posts('attachment')->trash ); ?>)</span>
+                    <?php esc_html_e('Trash', 'oli-media-cleaner'); ?>
+                    <span class="count" id="omc-trash-count">(<?php echo esc_html( wp_count_posts('attachment')->trash ); ?>)</span>
                 </a>
             </nav>
 
             <div class="tablenav top">
                 <div class="alignleft actions">
-                    <label><input type="checkbox" id="dui-select-all"> <?php esc_html_e('Select All', 'delete-unused-images'); ?></label>
+                    <label><input type="checkbox" id="omc-select-all"> <?php esc_html_e('Select All', 'oli-media-cleaner'); ?></label>
                     <?php if ($tab === 'unused'): ?>
-                        <button type="button" class="button" id="dui-bulk-trash-btn"><?php esc_html_e('Trash Selected', 'delete-unused-images'); ?></button>
-                        <button type="button" class="button" id="dui-bulk-whitelist-btn"><?php esc_html_e('Whitelist Selected', 'delete-unused-images'); ?></button>
-                        <button type="button" class="button" id="dui-trash-all-btn" style="color:#b32d2e;"><?php esc_html_e('Trash All Unused', 'delete-unused-images'); ?></button>
+                        <button type="button" class="button" id="omc-bulk-trash-btn"><?php esc_html_e('Trash Selected', 'oli-media-cleaner'); ?></button>
+                        <button type="button" class="button" id="omc-bulk-whitelist-btn"><?php esc_html_e('Whitelist Selected', 'oli-media-cleaner'); ?></button>
+                        <button type="button" class="button" id="omc-trash-all-btn" style="color:#b32d2e;"><?php esc_html_e('Trash All Unused', 'oli-media-cleaner'); ?></button>
                     <?php elseif ($tab === 'whitelist'): ?>
-                        <button type="button" class="button" id="dui-bulk-remove-whitelist-btn"><?php esc_html_e('Remove from Whitelist', 'delete-unused-images'); ?></button>
+                        <button type="button" class="button" id="omc-bulk-remove-whitelist-btn"><?php esc_html_e('Remove from Whitelist', 'oli-media-cleaner'); ?></button>
                     <?php elseif ($tab === 'trash'): ?>
-                        <button type="button" class="button" id="dui-bulk-restore-btn"><?php esc_html_e('Restore Selected', 'delete-unused-images'); ?></button>
-                        <button type="button" class="button" id="dui-bulk-delete-btn"><?php esc_html_e('Delete Permanently', 'delete-unused-images'); ?></button>
-                        <button type="button" class="button" id="dui-empty-trash-btn" style="color:#b32d2e;"><?php esc_html_e('Empty Trash', 'delete-unused-images'); ?></button>
+                        <button type="button" class="button" id="omc-bulk-restore-btn"><?php esc_html_e('Restore Selected', 'oli-media-cleaner'); ?></button>
+                        <button type="button" class="button" id="omc-bulk-delete-btn"><?php esc_html_e('Delete Permanently', 'oli-media-cleaner'); ?></button>
+                        <button type="button" class="button" id="omc-empty-trash-btn" style="color:#b32d2e;"><?php esc_html_e('Empty Trash', 'oli-media-cleaner'); ?></button>
                     <?php endif; ?>
-                    <span id="dui-selected-info" class="description" style="margin-left:8px;"></span>
+                    <span id="omc-selected-info" class="description" style="margin-left:8px;"></span>
                 </div>
                 <div class="alignright">
                     <?php
-                    $scan_results = get_option('dui_scan_results', []);
+                    $scan_results = get_option('omc_scan_results', []);
                     $found_exts = [];
                     foreach ($scan_results as $item) {
                         $ext = strtolower($item['ext'] ?? '');
@@ -175,14 +175,14 @@ class DUI_Admin {
                     ksort($found_exts);
 
                     $groups = [
-                        __('Images', 'delete-unused-images')    => ['jpg','jpeg','png','gif','webp','svg','ico','bmp','tiff','heic'],
-                        __('Documents', 'delete-unused-images') => ['pdf','doc','docx','xls','xlsx','csv','ppt','pptx','txt','zip','rar'],
-                        __('Video', 'delete-unused-images')     => ['mp4','mov','avi','webm','wmv','mkv'],
-                        __('Audio', 'delete-unused-images')     => ['mp3','wav','ogg','flac','aac'],
+                        __('Images', 'oli-media-cleaner')    => ['jpg','jpeg','png','gif','webp','svg','ico','bmp','tiff','heic'],
+                        __('Documents', 'oli-media-cleaner') => ['pdf','doc','docx','xls','xlsx','csv','ppt','pptx','txt','zip','rar'],
+                        __('Video', 'oli-media-cleaner')     => ['mp4','mov','avi','webm','wmv','mkv'],
+                        __('Audio', 'oli-media-cleaner')     => ['mp3','wav','ogg','flac','aac'],
                     ];
                     ?>
-                    <select id="dui-filter-type" style="vertical-align:middle;">
-                        <option value=""><?php esc_html_e('All Types', 'delete-unused-images'); ?></option>
+                    <select id="omc-filter-type" style="vertical-align:middle;">
+                        <option value=""><?php esc_html_e('All Types', 'oli-media-cleaner'); ?></option>
                         <?php foreach ($groups as $label => $exts):
                             $group_items = array_intersect_key($found_exts, array_flip($exts));
                             if (empty($group_items)) continue;
@@ -197,76 +197,76 @@ class DUI_Admin {
                         $known = array_merge(...array_values($groups));
                         $other = array_diff_key($found_exts, array_flip($known));
                         if (!empty($other)): ?>
-                        <optgroup label="<?php esc_attr_e('Other', 'delete-unused-images'); ?>">
+                        <optgroup label="<?php esc_attr_e('Other', 'oli-media-cleaner'); ?>">
                             <?php foreach ($other as $ext => $display): ?>
                             <option value="<?php echo esc_attr($ext); ?>"><?php echo esc_html($display); ?></option>
                             <?php endforeach; ?>
                         </optgroup>
                         <?php endif; ?>
                     </select>
-                    <input type="search" id="dui-search" placeholder="<?php esc_attr_e('Search files...', 'delete-unused-images'); ?>" style="vertical-align:middle;">
-                    <button type="button" id="dui-search-btn" class="button"><?php esc_html_e('Search', 'delete-unused-images'); ?></button>
+                    <input type="search" id="omc-search" placeholder="<?php esc_attr_e('Search files...', 'oli-media-cleaner'); ?>" style="vertical-align:middle;">
+                    <button type="button" id="omc-search-btn" class="button"><?php esc_html_e('Search', 'oli-media-cleaner'); ?></button>
                 </div>
             </div>
 
-            <div id="dui-results">
+            <div id="omc-results">
                 <?php self::render_results_table($tab); ?>
             </div>
 
             <div class="tablenav bottom">
                 <div class="alignleft actions">
-                    <label><?php esc_html_e('Show', 'delete-unused-images'); ?>
-                        <select id="dui-per-page" style="vertical-align:middle;">
+                    <label><?php esc_html_e('Show', 'oli-media-cleaner'); ?>
+                        <select id="omc-per-page" style="vertical-align:middle;">
                             <option value="20">20</option>
                             <option value="50">50</option>
                             <option value="100">100</option>
                         </select>
-                        <?php esc_html_e('per page', 'delete-unused-images'); ?>
+                        <?php esc_html_e('per page', 'oli-media-cleaner'); ?>
                     </label>
                 </div>
-                <div class="alignright" id="dui-pagination"></div>
+                <div class="alignright" id="omc-pagination"></div>
                 <br class="clear">
             </div>
 
             <div class="postbox" style="margin-top:30px;">
-                <div class="postbox-header"><h2 style="padding:8px 12px;margin:0;"><?php esc_html_e('Scheduled Auto-Cleanup', 'delete-unused-images'); ?></h2></div>
+                <div class="postbox-header"><h2 style="padding:8px 12px;margin:0;"><?php esc_html_e('Scheduled Auto-Cleanup', 'oli-media-cleaner'); ?></h2></div>
                 <div class="inside">
                     <?php
-                    $cron_enabled = get_option('dui_cron_enabled', false);
-                    $cron_frequency = get_option('dui_cron_frequency', 'daily');
-                    $next_run = wp_next_scheduled('dui_scheduled_cleanup');
+                    $cron_enabled = get_option('omc_cron_enabled', false);
+                    $cron_frequency = get_option('omc_cron_frequency', 'daily');
+                    $next_run = wp_next_scheduled('omc_scheduled_cleanup');
                     ?>
                     <table class="form-table">
                         <tr>
-                            <th><?php esc_html_e('Enable Auto-Cleanup', 'delete-unused-images'); ?></th>
+                            <th><?php esc_html_e('Enable Auto-Cleanup', 'oli-media-cleaner'); ?></th>
                             <td>
                                 <label>
-                                    <input type="checkbox" id="dui-cron-enabled" <?php checked($cron_enabled); ?>>
-                                    <?php esc_html_e('Automatically scan and trash unused images on a schedule', 'delete-unused-images'); ?>
+                                    <input type="checkbox" id="omc-cron-enabled" <?php checked($cron_enabled); ?>>
+                                    <?php esc_html_e('Automatically scan and trash unused images on a schedule', 'oli-media-cleaner'); ?>
                                 </label>
                             </td>
                         </tr>
                         <tr>
-                            <th><?php esc_html_e('Frequency', 'delete-unused-images'); ?></th>
+                            <th><?php esc_html_e('Frequency', 'oli-media-cleaner'); ?></th>
                             <td>
-                                <select id="dui-cron-frequency">
-                                    <option value="daily" <?php selected($cron_frequency, 'daily'); ?>><?php esc_html_e('Daily', 'delete-unused-images'); ?></option>
-                                    <option value="twicedaily" <?php selected($cron_frequency, 'twicedaily'); ?>><?php esc_html_e('Twice Daily', 'delete-unused-images'); ?></option>
-                                    <option value="weekly" <?php selected($cron_frequency, 'weekly'); ?>><?php esc_html_e('Weekly', 'delete-unused-images'); ?></option>
+                                <select id="omc-cron-frequency">
+                                    <option value="daily" <?php selected($cron_frequency, 'daily'); ?>><?php esc_html_e('Daily', 'oli-media-cleaner'); ?></option>
+                                    <option value="twicedaily" <?php selected($cron_frequency, 'twicedaily'); ?>><?php esc_html_e('Twice Daily', 'oli-media-cleaner'); ?></option>
+                                    <option value="weekly" <?php selected($cron_frequency, 'weekly'); ?>><?php esc_html_e('Weekly', 'oli-media-cleaner'); ?></option>
                                 </select>
                             </td>
                         </tr>
                         <tr>
-                            <th><?php esc_html_e('Next Scheduled Run', 'delete-unused-images'); ?></th>
+                            <th><?php esc_html_e('Next Scheduled Run', 'oli-media-cleaner'); ?></th>
                             <td>
-                                <span id="dui-next-run">
-                                    <?php echo $next_run ? esc_html( date_i18n('M j, Y g:i a', $next_run) ) : esc_html__('Not scheduled', 'delete-unused-images'); ?>
+                                <span id="omc-next-run">
+                                    <?php echo $next_run ? esc_html( date_i18n('M j, Y g:i a', $next_run) ) : esc_html__('Not scheduled', 'oli-media-cleaner'); ?>
                                 </span>
                             </td>
                         </tr>
                     </table>
                     <p>
-                        <button type="button" id="dui-save-cron-btn" class="button button-primary"><?php esc_html_e('Save Settings', 'delete-unused-images'); ?></button>
+                        <button type="button" id="omc-save-cron-btn" class="button button-primary"><?php esc_html_e('Save Settings', 'oli-media-cleaner'); ?></button>
                     </p>
                 </div>
             </div>
@@ -275,11 +275,11 @@ class DUI_Admin {
     }
 
     private static function render_stats() {
-        $scan_results = get_option('dui_scan_results', []);
-        $total = (new DUI_Scanner())->get_total_attachment_count();
+        $scan_results = get_option('omc_scan_results', []);
+        $total = (new OMC_Scanner())->get_total_attachment_count();
         $unused_count = count($scan_results);
         $used_count = $total - $unused_count;
-        $whitelist = get_option('dui_whitelist', []);
+        $whitelist = get_option('omc_whitelist', []);
 
         $unused_size = 0;
         if (!empty($scan_results)) {
@@ -290,17 +290,17 @@ class DUI_Admin {
         ?>
         <table class="form-table">
             <tr>
-                <th><?php esc_html_e('Total Media', 'delete-unused-images'); ?></th>
+                <th><?php esc_html_e('Total Media', 'oli-media-cleaner'); ?></th>
                 <td><strong><?php echo esc_html( number_format_i18n($total) ); ?></strong></td>
-                <th><?php esc_html_e('In Use', 'delete-unused-images'); ?></th>
+                <th><?php esc_html_e('In Use', 'oli-media-cleaner'); ?></th>
                 <td><strong><?php echo esc_html( number_format_i18n($used_count) ); ?></strong></td>
-                <th><?php esc_html_e('Unused', 'delete-unused-images'); ?></th>
+                <th><?php esc_html_e('Unused', 'oli-media-cleaner'); ?></th>
                 <td><strong><?php echo esc_html( number_format_i18n($unused_count) ); ?></strong></td>
             </tr>
             <tr>
-                <th><?php esc_html_e('Space to Free', 'delete-unused-images'); ?></th>
+                <th><?php esc_html_e('Space to Free', 'oli-media-cleaner'); ?></th>
                 <td><strong><?php echo esc_html( size_format($unused_size) ); ?></strong></td>
-                <th><?php esc_html_e('Whitelisted', 'delete-unused-images'); ?></th>
+                <th><?php esc_html_e('Whitelisted', 'oli-media-cleaner'); ?></th>
                 <td><strong><?php echo esc_html( number_format_i18n(count($whitelist)) ); ?></strong></td>
                 <td colspan="2"></td>
             </tr>
@@ -309,20 +309,20 @@ class DUI_Admin {
     }
 
     private static function render_results_table($tab, $page = 1, $per_page = 20, $search = '', $orderby = 'date', $order = 'desc', $filter_type = '') {
-        $scanner = new DUI_Scanner();
+        $scanner = new OMC_Scanner();
         $all_items = [];
         $total_items = 0;
 
         if ($tab === 'unused') {
-            $scan_results = get_option('dui_scan_results', []);
-            $whitelist = get_option('dui_whitelist', []);
+            $scan_results = get_option('omc_scan_results', []);
+            $whitelist = get_option('omc_whitelist', []);
             $scan_results = array_filter($scan_results, function($item) use ($whitelist) {
                 return !in_array((int)$item['id'], $whitelist, true);
             });
             $all_items = array_values($scan_results);
 
         } elseif ($tab === 'whitelist') {
-            $whitelist = get_option('dui_whitelist', []);
+            $whitelist = get_option('omc_whitelist', []);
             foreach ($whitelist as $id) {
                 $info = $scanner->get_attachment_info($id);
                 if ($info) $all_items[] = $info;
@@ -389,11 +389,11 @@ class DUI_Admin {
         if (empty($items)) {
             echo '<p class="description">';
             if ($tab === 'unused') {
-                esc_html_e('No unused media found. Run a scan to detect unused files.', 'delete-unused-images');
+                esc_html_e('No unused media found. Run a scan to detect unused files.', 'oli-media-cleaner');
             } elseif ($tab === 'whitelist') {
-                esc_html_e('No whitelisted items.', 'delete-unused-images');
+                esc_html_e('No whitelisted items.', 'oli-media-cleaner');
             } else {
-                esc_html_e('Trash is empty.', 'delete-unused-images');
+                esc_html_e('Trash is empty.', 'oli-media-cleaner');
             }
             echo '</p>';
             return;
@@ -401,13 +401,13 @@ class DUI_Admin {
 
         echo '<table class="widefat striped">';
         echo '<thead><tr>';
-        echo '<th class="check-column"><input type="checkbox" class="dui-select-all-header"></th>';
-        echo '<th>' . esc_html__('File', 'delete-unused-images') . '</th>';
-        echo '<th class="dui-sortable" data-sort="name" style="cursor:pointer;">' . esc_html__('Name', 'delete-unused-images') . wp_kses_post( self::sort_indicator('name', $orderby, $order) ) . '</th>';
-        echo '<th class="dui-sortable" data-sort="size" style="cursor:pointer;">' . esc_html__('Size', 'delete-unused-images') . wp_kses_post( self::sort_indicator('size', $orderby, $order) ) . '</th>';
-        echo '<th class="dui-sortable" data-sort="type" style="cursor:pointer;">' . esc_html__('Type', 'delete-unused-images') . wp_kses_post( self::sort_indicator('type', $orderby, $order) ) . '</th>';
-        echo '<th class="dui-sortable" data-sort="date" style="cursor:pointer;">' . esc_html__('Date', 'delete-unused-images') . wp_kses_post( self::sort_indicator('date', $orderby, $order) ) . '</th>';
-        echo '<th>' . esc_html__('Actions', 'delete-unused-images') . '</th>';
+        echo '<th class="check-column"><input type="checkbox" class="omc-select-all-header"></th>';
+        echo '<th>' . esc_html__('File', 'oli-media-cleaner') . '</th>';
+        echo '<th class="omc-sortable" data-sort="name" style="cursor:pointer;">' . esc_html__('Name', 'oli-media-cleaner') . wp_kses_post( self::sort_indicator('name', $orderby, $order) ) . '</th>';
+        echo '<th class="omc-sortable" data-sort="size" style="cursor:pointer;">' . esc_html__('Size', 'oli-media-cleaner') . wp_kses_post( self::sort_indicator('size', $orderby, $order) ) . '</th>';
+        echo '<th class="omc-sortable" data-sort="type" style="cursor:pointer;">' . esc_html__('Type', 'oli-media-cleaner') . wp_kses_post( self::sort_indicator('type', $orderby, $order) ) . '</th>';
+        echo '<th class="omc-sortable" data-sort="date" style="cursor:pointer;">' . esc_html__('Date', 'oli-media-cleaner') . wp_kses_post( self::sort_indicator('date', $orderby, $order) ) . '</th>';
+        echo '<th>' . esc_html__('Actions', 'oli-media-cleaner') . '</th>';
         echo '</tr></thead><tbody>';
 
         foreach ($items as $item) {
@@ -418,7 +418,7 @@ class DUI_Admin {
             $edit_url = admin_url("post.php?post={$id}&action=edit");
 
             echo '<tr data-id="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '">';
-            echo '<th class="check-column"><input type="checkbox" class="dui-item-cb" value="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '"></th>';
+            echo '<th class="check-column"><input type="checkbox" class="omc-item-cb" value="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '"></th>';
             echo '<td>' . wp_kses_post( $thumb ) . '</td>';
             echo '<td><strong>' . esc_html($item['title']) . '</strong><br><span class="description">' . esc_html(wp_basename($item['url'] ?? '')) . '</span></td>';
             echo '<td>' . esc_html($size_formatted) . '</td>';
@@ -427,16 +427,16 @@ class DUI_Admin {
             echo '<td>';
 
             if ($tab === 'unused') {
-                echo '<a href="' . esc_url($item['url']) . '" target="_blank" class="button button-small">' . esc_html__('View', 'delete-unused-images') . '</a> ';
-                echo '<a href="' . esc_url($edit_url) . '" target="_blank" class="button button-small">' . esc_html__('Edit', 'delete-unused-images') . '</a> ';
-                echo '<button type="button" class="button button-small dui-whitelist-btn" data-id="' . esc_attr($id) . '">' . esc_html__('Whitelist', 'delete-unused-images') . '</button> ';
-                echo '<button type="button" class="button button-small dui-trash-btn" data-id="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '">' . esc_html__('Trash', 'delete-unused-images') . '</button>';
+                echo '<a href="' . esc_url($item['url']) . '" target="_blank" class="button button-small">' . esc_html__('View', 'oli-media-cleaner') . '</a> ';
+                echo '<a href="' . esc_url($edit_url) . '" target="_blank" class="button button-small">' . esc_html__('Edit', 'oli-media-cleaner') . '</a> ';
+                echo '<button type="button" class="button button-small omc-whitelist-btn" data-id="' . esc_attr($id) . '">' . esc_html__('Whitelist', 'oli-media-cleaner') . '</button> ';
+                echo '<button type="button" class="button button-small omc-trash-btn" data-id="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '">' . esc_html__('Trash', 'oli-media-cleaner') . '</button>';
             } elseif ($tab === 'whitelist') {
-                echo '<a href="' . esc_url($item['url']) . '" target="_blank" class="button button-small">' . esc_html__('View', 'delete-unused-images') . '</a> ';
-                echo '<button type="button" class="button button-small dui-remove-whitelist-btn" data-id="' . esc_attr($id) . '">' . esc_html__('Remove', 'delete-unused-images') . '</button>';
+                echo '<a href="' . esc_url($item['url']) . '" target="_blank" class="button button-small">' . esc_html__('View', 'oli-media-cleaner') . '</a> ';
+                echo '<button type="button" class="button button-small omc-remove-whitelist-btn" data-id="' . esc_attr($id) . '">' . esc_html__('Remove', 'oli-media-cleaner') . '</button>';
             } elseif ($tab === 'trash') {
-                echo '<button type="button" class="button button-small dui-restore-btn" data-id="' . esc_attr($id) . '">' . esc_html__('Restore', 'delete-unused-images') . '</button> ';
-                echo '<button type="button" class="button button-small dui-delete-btn" data-id="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '" style="color:#b32d2e;">' . esc_html__('Delete', 'delete-unused-images') . '</button>';
+                echo '<button type="button" class="button button-small omc-restore-btn" data-id="' . esc_attr($id) . '">' . esc_html__('Restore', 'oli-media-cleaner') . '</button> ';
+                echo '<button type="button" class="button button-small omc-delete-btn" data-id="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '" style="color:#b32d2e;">' . esc_html__('Delete', 'oli-media-cleaner') . '</button>';
             }
 
             echo '</td>';
@@ -445,7 +445,7 @@ class DUI_Admin {
 
         echo '</tbody></table>';
 
-        echo '<div id="dui-pag-data" data-total-pages="' . (int) $total_pages . '" data-current-page="' . (int) $page . '" data-total-items="' . (int) $total_items . '" style="display:none;"></div>';
+        echo '<div id="omc-pag-data" data-total-pages="' . (int) $total_pages . '" data-current-page="' . (int) $page . '" data-total-items="' . (int) $total_items . '" style="display:none;"></div>';
     }
 
     private static function sort_indicator($col, $orderby, $order) {
@@ -470,7 +470,7 @@ class DUI_Admin {
         if (!current_user_can('manage_options')) {
             wp_send_json_error('Permission denied.');
         }
-        if (!check_ajax_referer('dui_nonce', 'nonce', false)) {
+        if (!check_ajax_referer('omc_nonce', 'nonce', false)) {
             wp_send_json_error('Invalid nonce.');
         }
     }
@@ -481,20 +481,20 @@ class DUI_Admin {
     public static function ajax_start_scan() {
         self::verify_request();
 
-        $scanner = new DUI_Scanner();
+        $scanner = new OMC_Scanner();
         $used_ids = $scanner->collect_used_ids();
         $total = $scanner->get_total_attachment_count();
 
         // Store used IDs for batch processing
-        update_option('dui_scan_used_ids', $used_ids, false);
+        update_option('omc_scan_used_ids', $used_ids, false);
         // Clear old results
-        delete_option('dui_scan_results');
+        delete_option('omc_scan_results');
 
         wp_send_json_success([
             'total'    => $total,
             'used'     => count($used_ids),
             /* translators: %1$d: number of used media, %2$d: total attachments */
-            'message'  => sprintf(__('Found %1$d used media. Scanning %2$d total attachments...', 'delete-unused-images'), count($used_ids), $total),
+            'message'  => sprintf(__('Found %1$d used media. Scanning %2$d total attachments...', 'oli-media-cleaner'), count($used_ids), $total),
         ]);
     }
 
@@ -507,9 +507,9 @@ class DUI_Admin {
         $offset = (int) ($_POST['offset'] ?? 0);
         $batch_size = 50;
 
-        $scanner = new DUI_Scanner();
-        $used_ids = get_option('dui_scan_used_ids', []);
-        $whitelist = get_option('dui_whitelist', []);
+        $scanner = new OMC_Scanner();
+        $used_ids = get_option('omc_scan_used_ids', []);
+        $whitelist = get_option('omc_whitelist', []);
 
         global $wpdb;
         $attachment_ids = $wpdb->get_col($wpdb->prepare(
@@ -533,18 +533,18 @@ class DUI_Admin {
         }
 
         // Append to stored results
-        $existing = get_option('dui_scan_results', []);
+        $existing = get_option('omc_scan_results', []);
         $existing = array_merge($existing, $unused_batch);
-        update_option('dui_scan_results', $existing, false);
+        update_option('omc_scan_results', $existing, false);
 
         $processed = $offset + count($attachment_ids);
         $total = $scanner->get_total_attachment_count();
         $done = count($attachment_ids) < $batch_size;
 
         if ($done) {
-            update_option('dui_scan_date', current_time('mysql'), false);
+            update_option('omc_scan_date', current_time('mysql'), false);
             // Cleanup temp
-            delete_option('dui_scan_used_ids');
+            delete_option('omc_scan_used_ids');
         }
 
         wp_send_json_success([
@@ -609,9 +609,9 @@ class DUI_Admin {
         $result = wp_trash_post($post_id);
         if ($result) {
             self::remove_from_scan_results($post_id);
-            wp_send_json_success(['message' => __('File moved to trash.', 'delete-unused-images')]);
+            wp_send_json_success(['message' => __('File moved to trash.', 'oli-media-cleaner')]);
         }
-        wp_send_json_error(__('Could not trash file.', 'delete-unused-images'));
+        wp_send_json_error(__('Could not trash file.', 'oli-media-cleaner'));
     }
 
     /**
@@ -631,7 +631,7 @@ class DUI_Admin {
 
         wp_send_json_success([
             /* translators: %d: number of files trashed */
-            'message' => sprintf(__('%d files moved to trash.', 'delete-unused-images'), $trashed),
+            'message' => sprintf(__('%d files moved to trash.', 'oli-media-cleaner'), $trashed),
             'count'   => $trashed,
         ]);
     }
@@ -648,9 +648,9 @@ class DUI_Admin {
         $result = wp_delete_attachment($post_id, true);
         if ($result) {
             self::remove_from_scan_results($post_id);
-            wp_send_json_success(['message' => __('File permanently deleted.', 'delete-unused-images')]);
+            wp_send_json_success(['message' => __('File permanently deleted.', 'oli-media-cleaner')]);
         }
-        wp_send_json_error(__('Could not delete file.', 'delete-unused-images'));
+        wp_send_json_error(__('Could not delete file.', 'oli-media-cleaner'));
     }
 
     /**
@@ -670,7 +670,7 @@ class DUI_Admin {
 
         wp_send_json_success([
             /* translators: %d: number of files deleted */
-            'message' => sprintf(__('%d files permanently deleted.', 'delete-unused-images'), $deleted),
+            'message' => sprintf(__('%d files permanently deleted.', 'oli-media-cleaner'), $deleted),
             'count'   => $deleted,
         ]);
     }
@@ -684,13 +684,13 @@ class DUI_Admin {
         $post_id = (int) ($_POST['post_id'] ?? 0);
         if (!$post_id) wp_send_json_error('Invalid ID.');
 
-        $whitelist = get_option('dui_whitelist', []);
+        $whitelist = get_option('omc_whitelist', []);
         if (!in_array($post_id, $whitelist, true)) {
             $whitelist[] = $post_id;
-            update_option('dui_whitelist', $whitelist, false);
+            update_option('omc_whitelist', $whitelist, false);
         }
 
-        wp_send_json_success(['message' => __('Added to whitelist.', 'delete-unused-images')]);
+        wp_send_json_success(['message' => __('Added to whitelist.', 'oli-media-cleaner')]);
     }
 
     /**
@@ -700,7 +700,7 @@ class DUI_Admin {
         self::verify_request();
 
         $ids = array_map('intval', $_POST['ids'] ?? []);
-        $whitelist = get_option('dui_whitelist', []);
+        $whitelist = get_option('omc_whitelist', []);
         $added = 0;
 
         foreach ($ids as $id) {
@@ -709,11 +709,11 @@ class DUI_Admin {
                 $added++;
             }
         }
-        update_option('dui_whitelist', $whitelist, false);
+        update_option('omc_whitelist', $whitelist, false);
 
         wp_send_json_success([
             /* translators: %d: number of items added */
-            'message' => sprintf(__('%d items added to whitelist.', 'delete-unused-images'), $added),
+            'message' => sprintf(__('%d items added to whitelist.', 'oli-media-cleaner'), $added),
             'count'   => $added,
         ]);
     }
@@ -727,11 +727,11 @@ class DUI_Admin {
         $post_id = (int) ($_POST['post_id'] ?? 0);
         if (!$post_id) wp_send_json_error('Invalid ID.');
 
-        $whitelist = get_option('dui_whitelist', []);
+        $whitelist = get_option('omc_whitelist', []);
         $whitelist = array_values(array_diff($whitelist, [$post_id]));
-        update_option('dui_whitelist', $whitelist, false);
+        update_option('omc_whitelist', $whitelist, false);
 
-        wp_send_json_success(['message' => __('Removed from whitelist.', 'delete-unused-images')]);
+        wp_send_json_success(['message' => __('Removed from whitelist.', 'oli-media-cleaner')]);
     }
 
     /**
@@ -741,13 +741,13 @@ class DUI_Admin {
         self::verify_request();
 
         $ids = array_map('intval', $_POST['ids'] ?? []);
-        $whitelist = get_option('dui_whitelist', []);
+        $whitelist = get_option('omc_whitelist', []);
         $whitelist = array_values(array_diff($whitelist, $ids));
-        update_option('dui_whitelist', $whitelist, false);
+        update_option('omc_whitelist', $whitelist, false);
 
         wp_send_json_success([
             /* translators: %d: number of items removed */
-            'message' => sprintf(__('%d items removed from whitelist.', 'delete-unused-images'), count($ids)),
+            'message' => sprintf(__('%d items removed from whitelist.', 'oli-media-cleaner'), count($ids)),
             'count'   => count($ids),
         ]);
     }
@@ -763,9 +763,9 @@ class DUI_Admin {
 
         $result = wp_untrash_post($post_id);
         if ($result) {
-            wp_send_json_success(['message' => __('File restored.', 'delete-unused-images')]);
+            wp_send_json_success(['message' => __('File restored.', 'oli-media-cleaner')]);
         }
-        wp_send_json_error(__('Could not restore file.', 'delete-unused-images'));
+        wp_send_json_error(__('Could not restore file.', 'oli-media-cleaner'));
     }
 
     /**
@@ -784,7 +784,7 @@ class DUI_Admin {
 
         wp_send_json_success([
             /* translators: %d: number of files restored */
-            'message' => sprintf(__('%d files restored.', 'delete-unused-images'), $restored),
+            'message' => sprintf(__('%d files restored.', 'oli-media-cleaner'), $restored),
             'count'   => $restored,
         ]);
     }
@@ -796,8 +796,8 @@ class DUI_Admin {
         self::verify_request();
 
         $batch_size = 50;
-        $scan_results = get_option('dui_scan_results', []);
-        $whitelist = get_option('dui_whitelist', []);
+        $scan_results = get_option('omc_scan_results', []);
+        $whitelist = get_option('omc_whitelist', []);
 
         // Filter out whitelisted
         $scan_results = array_filter($scan_results, function($item) use ($whitelist) {
@@ -877,24 +877,24 @@ class DUI_Admin {
             $frequency = 'daily';
         }
 
-        update_option('dui_cron_enabled', $enabled, false);
-        update_option('dui_cron_frequency', $frequency, false);
+        update_option('omc_cron_enabled', $enabled, false);
+        update_option('omc_cron_frequency', $frequency, false);
 
         // Clear existing schedule
-        wp_clear_scheduled_hook('dui_scheduled_cleanup');
+        wp_clear_scheduled_hook('omc_scheduled_cleanup');
 
         $next_run = '';
         if ($enabled) {
-            wp_schedule_event(time() + 60, $frequency, 'dui_scheduled_cleanup');
-            $next_run = date_i18n('M j, Y g:i a', wp_next_scheduled('dui_scheduled_cleanup'));
+            wp_schedule_event(time() + 60, $frequency, 'omc_scheduled_cleanup');
+            $next_run = date_i18n('M j, Y g:i a', wp_next_scheduled('omc_scheduled_cleanup'));
         }
 
         wp_send_json_success([
             'message'  => $enabled
                 /* translators: %1$s: frequency, %2$s: next run date */
-                ? sprintf(__('Auto-cleanup enabled (%1$s). Next run: %2$s', 'delete-unused-images'), $frequency, $next_run)
-                : __('Auto-cleanup disabled.', 'delete-unused-images'),
-            'next_run' => $next_run ?: __('Not scheduled', 'delete-unused-images'),
+                ? sprintf(__('Auto-cleanup enabled (%1$s). Next run: %2$s', 'oli-media-cleaner'), $frequency, $next_run)
+                : __('Auto-cleanup disabled.', 'oli-media-cleaner'),
+            'next_run' => $next_run ?: __('Not scheduled', 'oli-media-cleaner'),
         ]);
     }
 
@@ -902,9 +902,9 @@ class DUI_Admin {
      * Cron callback: scan + trash unused images.
      */
     public static function run_scheduled_cleanup() {
-        $scanner = new DUI_Scanner();
+        $scanner = new OMC_Scanner();
         $used_ids = $scanner->collect_used_ids();
-        $whitelist = get_option('dui_whitelist', []);
+        $whitelist = get_option('omc_whitelist', []);
         $total = $scanner->get_total_attachment_count();
 
         global $wpdb;
@@ -940,17 +940,17 @@ class DUI_Admin {
         }
 
         // Update scan results and date
-        update_option('dui_scan_results', [], false);
-        update_option('dui_scan_date', current_time('mysql'), false);
+        update_option('omc_scan_results', [], false);
+        update_option('omc_scan_date', current_time('mysql'), false);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────
 
     private static function remove_from_scan_results($post_id) {
-        $results = get_option('dui_scan_results', []);
+        $results = get_option('omc_scan_results', []);
         $results = array_filter($results, function($item) use ($post_id) {
             return (int) $item['id'] !== (int) $post_id;
         });
-        update_option('dui_scan_results', array_values($results), false);
+        update_option('omc_scan_results', array_values($results), false);
     }
 }

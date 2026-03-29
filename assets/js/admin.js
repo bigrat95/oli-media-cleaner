@@ -1,7 +1,7 @@
 (function($) {
     'use strict';
 
-    var DUI = {
+    var OMC = {
         currentTab: 'unused',
         currentPage: 1,
         scanning: false,
@@ -24,7 +24,7 @@
             var self = this;
 
             // Scan button
-            $('#dui-scan-btn').on('click', function() {
+            $('#omc-scan-btn').on('click', function() {
                 self.startScan();
             });
 
@@ -44,112 +44,112 @@
                     self.filterType = '';
                     self.sortBy = 'date';
                     self.sortOrder = 'desc';
-                    $('#dui-search').val('');
-                    $('#dui-filter-type').val('');
+                    $('#omc-search').val('');
+                    $('#omc-filter-type').val('');
                     self.loadResults();
                     self.updateBulkBar();
                 }
             });
 
             // Select all checkbox
-            $(document).on('change', '#dui-select-all, .dui-select-all-header', function() {
+            $(document).on('change', '#omc-select-all, .omc-select-all-header', function() {
                 var checked = $(this).prop('checked');
-                $('.dui-item-cb').prop('checked', checked);
-                $('#dui-select-all, .dui-select-all-header').prop('checked', checked);
+                $('.omc-item-cb').prop('checked', checked);
+                $('#omc-select-all, .omc-select-all-header').prop('checked', checked);
                 self.updateSelectedInfo();
             });
 
             // Individual checkbox
-            $(document).on('change', '.dui-item-cb', function() {
+            $(document).on('change', '.omc-item-cb', function() {
                 self.updateSelectedInfo();
             });
 
             // Single actions
-            $(document).on('click', '.dui-trash-btn', function() {
+            $(document).on('click', '.omc-trash-btn', function() {
                 var id = $(this).data('id');
-                if (confirm(duiObj.strings.confirm_trash)) {
+                if (confirm(omcObj.strings.confirm_trash)) {
                     self.trashSingle(id, $(this).closest('tr'));
                 }
             });
 
-            $(document).on('click', '.dui-delete-btn', function() {
+            $(document).on('click', '.omc-delete-btn', function() {
                 var id = $(this).data('id');
-                if (confirm(duiObj.strings.confirm_delete)) {
+                if (confirm(omcObj.strings.confirm_delete)) {
                     self.deleteSingle(id, $(this).closest('tr'));
                 }
             });
 
-            $(document).on('click', '.dui-whitelist-btn', function() {
+            $(document).on('click', '.omc-whitelist-btn', function() {
                 var id = $(this).data('id');
                 self.whitelistSingle(id, $(this).closest('tr'));
             });
 
-            $(document).on('click', '.dui-remove-whitelist-btn', function() {
+            $(document).on('click', '.omc-remove-whitelist-btn', function() {
                 var id = $(this).data('id');
                 self.removeWhitelist(id, $(this).closest('tr'));
             });
 
-            $(document).on('click', '.dui-restore-btn', function() {
+            $(document).on('click', '.omc-restore-btn', function() {
                 var id = $(this).data('id');
                 self.restoreSingle(id, $(this).closest('tr'));
             });
 
             // Bulk actions
-            $('#dui-bulk-trash-btn').on('click', function() {
+            $('#omc-bulk-trash-btn').on('click', function() {
                 var ids = self.getSelectedIds();
-                if (!ids.length) { self.toast(duiObj.strings.no_selection, 'info'); return; }
-                if (confirm(duiObj.strings.confirm_bulk_trash)) {
+                if (!ids.length) { self.toast(omcObj.strings.no_selection, 'info'); return; }
+                if (confirm(omcObj.strings.confirm_bulk_trash)) {
                     self.trashBulk(ids);
                 }
             });
 
-            $('#dui-bulk-delete-btn').on('click', function() {
+            $('#omc-bulk-delete-btn').on('click', function() {
                 var ids = self.getSelectedIds();
-                if (!ids.length) { self.toast(duiObj.strings.no_selection, 'info'); return; }
-                if (confirm(duiObj.strings.confirm_bulk_delete)) {
+                if (!ids.length) { self.toast(omcObj.strings.no_selection, 'info'); return; }
+                if (confirm(omcObj.strings.confirm_bulk_delete)) {
                     self.deleteBulk(ids);
                 }
             });
 
-            $('#dui-bulk-whitelist-btn').on('click', function() {
+            $('#omc-bulk-whitelist-btn').on('click', function() {
                 var ids = self.getSelectedIds();
-                if (!ids.length) { self.toast(duiObj.strings.no_selection, 'info'); return; }
+                if (!ids.length) { self.toast(omcObj.strings.no_selection, 'info'); return; }
                 self.whitelistBulk(ids);
             });
 
-            $('#dui-bulk-remove-whitelist-btn').on('click', function() {
+            $('#omc-bulk-remove-whitelist-btn').on('click', function() {
                 var ids = self.getSelectedIds();
-                if (!ids.length) { self.toast(duiObj.strings.no_selection, 'info'); return; }
+                if (!ids.length) { self.toast(omcObj.strings.no_selection, 'info'); return; }
                 if (confirm('Remove selected items from whitelist?')) {
                     self.removeWhitelistBulk(ids);
                 }
             });
 
-            $('#dui-bulk-restore-btn').on('click', function() {
+            $('#omc-bulk-restore-btn').on('click', function() {
                 var ids = self.getSelectedIds();
-                if (!ids.length) { self.toast(duiObj.strings.no_selection, 'info'); return; }
+                if (!ids.length) { self.toast(omcObj.strings.no_selection, 'info'); return; }
                 self.restoreBulk(ids);
             });
 
             // Trash All
-            $('#dui-trash-all-btn').on('click', function() {
-                if (!confirm(duiObj.strings.confirm_trash_all)) return;
+            $('#omc-trash-all-btn').on('click', function() {
+                if (!confirm(omcObj.strings.confirm_trash_all)) return;
                 self.trashAll();
             });
 
             // Empty Trash
-            $('#dui-empty-trash-btn').on('click', function() {
-                if (!confirm(duiObj.strings.confirm_empty_trash)) return;
+            $('#omc-empty-trash-btn').on('click', function() {
+                if (!confirm(omcObj.strings.confirm_empty_trash)) return;
                 self.emptyTrash();
             });
 
             // Cron settings
-            $('#dui-save-cron-btn').on('click', function() {
+            $('#omc-save-cron-btn').on('click', function() {
                 self.saveCronSettings();
             });
 
             // Sort by column header
-            $(document).on('click', '.dui-sortable', function() {
+            $(document).on('click', '.omc-sortable', function() {
                 var col = $(this).data('sort');
                 if (self.sortBy === col) {
                     self.sortOrder = self.sortOrder === 'asc' ? 'desc' : 'asc';
@@ -162,26 +162,26 @@
             });
 
             // Per page
-            $('#dui-per-page').on('change', function() {
+            $('#omc-per-page').on('change', function() {
                 self.perPage = parseInt($(this).val());
                 self.currentPage = 1;
                 self.loadResults();
             });
 
             // Filter by type
-            $('#dui-filter-type').on('change', function() {
+            $('#omc-filter-type').on('change', function() {
                 self.filterType = $(this).val();
                 self.currentPage = 1;
                 self.loadResults();
             });
 
             // Search
-            $('#dui-search-btn').on('click', function() {
-                self.searchTerm = $('#dui-search').val().trim();
+            $('#omc-search-btn').on('click', function() {
+                self.searchTerm = $('#omc-search').val().trim();
                 self.currentPage = 1;
                 self.loadResults();
             });
-            $('#dui-search').on('keypress', function(e) {
+            $('#omc-search').on('keypress', function(e) {
                 if (e.which === 13) {
                     e.preventDefault();
                     self.searchTerm = $(this).val().trim();
@@ -197,12 +197,12 @@
             });
 
             // Pagination
-            $(document).on('click', '.dui-page-btn', function() {
+            $(document).on('click', '.omc-page-btn', function() {
                 var page = $(this).data('page');
                 if (page && page !== self.currentPage) {
                     self.currentPage = page;
                     self.loadResults();
-                    $('html, body').animate({ scrollTop: $('#dui-results').offset().top - 50 }, 300);
+                    $('html, body').animate({ scrollTop: $('#omc-results').offset().top - 50 }, 300);
                 }
             });
         },
@@ -214,20 +214,20 @@
             this.scanning = true;
 
             var self = this;
-            var $btn = $('#dui-scan-btn');
-            var $progress = $('#dui-progress-wrap');
-            var $fill = $('#dui-progress-fill');
-            var $text = $('#dui-progress-text');
+            var $btn = $('#omc-scan-btn');
+            var $progress = $('#omc-progress-wrap');
+            var $fill = $('#omc-progress-fill');
+            var $text = $('#omc-progress-text');
 
-            $btn.prop('disabled', true).text(duiObj.strings.scanning);
+            $btn.prop('disabled', true).text(omcObj.strings.scanning);
             $progress.show();
             $fill.css('width', '0%');
             $text.text('0%');
 
             // Step 1: Start scan (collect used IDs)
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_start_scan',
-                nonce: duiObj.nonce
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_start_scan',
+                nonce: omcObj.nonce
             }, function(res) {
                 if (!res.success) {
                     self.toast(res.data || 'Scan failed', 'error');
@@ -248,12 +248,12 @@
 
         scanBatch: function(offset, total) {
             var self = this;
-            var $fill = $('#dui-progress-fill');
-            var $text = $('#dui-progress-text');
+            var $fill = $('#omc-progress-fill');
+            var $text = $('#omc-progress-text');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_scan_batch',
-                nonce: duiObj.nonce,
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_scan_batch',
+                nonce: omcObj.nonce,
                 offset: offset
             }, function(res) {
                 if (!res.success) {
@@ -268,15 +268,15 @@
 
                 if (res.data.done) {
                     $fill.css('width', '100%');
-                    $text.text(duiObj.strings.scan_complete + ' ' + res.data.unused_found + ' unused files.');
-                    self.toast(duiObj.strings.scan_complete + ' Found ' + res.data.unused_found + ' unused files.', 'success');
+                    $text.text(omcObj.strings.scan_complete + ' ' + res.data.unused_found + ' unused files.');
+                    self.toast(omcObj.strings.scan_complete + ' Found ' + res.data.unused_found + ' unused files.', 'success');
                     self.scanning = false;
                     self.currentPage = 1;
                     self.loadResults();
 
                     setTimeout(function() {
-                        $('#dui-progress-wrap').fadeOut();
-                        $('#dui-scan-btn').prop('disabled', false).text('Re-Scan');
+                        $('#omc-progress-wrap').fadeOut();
+                        $('#omc-scan-btn').prop('disabled', false).text('Re-Scan');
                     }, 3000);
                 } else {
                     // Next batch
@@ -290,21 +290,21 @@
 
         resetScanUI: function() {
             this.scanning = false;
-            $('#dui-scan-btn').prop('disabled', false).text('Scan for Unused Media');
-            $('#dui-progress-wrap').hide();
+            $('#omc-scan-btn').prop('disabled', false).text('Scan for Unused Media');
+            $('#omc-progress-wrap').hide();
         },
 
         // ─── Load results via AJAX ──────────────────────────────────
 
         loadResults: function() {
             var self = this;
-            var $results = $('#dui-results');
+            var $results = $('#omc-results');
 
             $results.css('opacity', '0.5');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_get_results',
-                nonce: duiObj.nonce,
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_get_results',
+                nonce: omcObj.nonce,
                 tab: this.currentTab,
                 page: this.currentPage,
                 search: this.searchTerm,
@@ -315,17 +315,17 @@
             }, function(res) {
                 if (res.success) {
                     $results.html(res.data.html).css('opacity', '1');
-                    $('#dui-stats').html(res.data.stats);
+                    $('#omc-stats').html(res.data.stats);
                     self.buildPagination(res.data.total_pages || 0, res.data.total_items || 0);
                     self.updateTabCounts(res.data.trash_count);
-                    $('#dui-select-all, .dui-select-all-header').prop('checked', false);
+                    $('#omc-select-all, .omc-select-all-header').prop('checked', false);
                     self.updateSelectedInfo();
                 }
             });
         },
 
         buildPagination: function(totalPages, totalItems) {
-            var $pag = $('#dui-pagination');
+            var $pag = $('#omc-pagination');
             if (!$pag.length) return;
             totalPages = totalPages || 0;
             totalItems = totalItems || 0;
@@ -334,61 +334,61 @@
             $pag.empty();
 
             if (totalPages <= 1) {
-                if (totalItems > 0) $pag.append('<span class="dui-page-info">' + totalItems + ' items</span>');
+                if (totalItems > 0) $pag.append('<span class="omc-page-info">' + totalItems + ' items</span>');
                 return;
             }
 
-            $pag.append('<button class="button dui-page-btn" data-page="' + (currentPage - 1) + '" ' + (currentPage <= 1 ? 'disabled' : '') + '>&laquo;</button>');
+            $pag.append('<button class="button omc-page-btn" data-page="' + (currentPage - 1) + '" ' + (currentPage <= 1 ? 'disabled' : '') + '>&laquo;</button>');
 
             var start = Math.max(1, currentPage - 2);
             var end = Math.min(totalPages, currentPage + 2);
 
             if (start > 1) {
-                $pag.append('<button class="button dui-page-btn" data-page="1">1</button>');
-                if (start > 2) $pag.append('<span class="dui-page-info">…</span>');
+                $pag.append('<button class="button omc-page-btn" data-page="1">1</button>');
+                if (start > 2) $pag.append('<span class="omc-page-info">…</span>');
             }
 
             for (var i = start; i <= end; i++) {
-                $pag.append('<button class="button dui-page-btn ' + (i === currentPage ? 'active' : '') + '" data-page="' + i + '">' + i + '</button>');
+                $pag.append('<button class="button omc-page-btn ' + (i === currentPage ? 'active' : '') + '" data-page="' + i + '">' + i + '</button>');
             }
 
             if (end < totalPages) {
-                if (end < totalPages - 1) $pag.append('<span class="dui-page-info">…</span>');
-                $pag.append('<button class="button dui-page-btn" data-page="' + totalPages + '">' + totalPages + '</button>');
+                if (end < totalPages - 1) $pag.append('<span class="omc-page-info">…</span>');
+                $pag.append('<button class="button omc-page-btn" data-page="' + totalPages + '">' + totalPages + '</button>');
             }
 
-            $pag.append('<button class="button dui-page-btn" data-page="' + (currentPage + 1) + '" ' + (currentPage >= totalPages ? 'disabled' : '') + '>&raquo;</button>');
-            $pag.append('<span class="dui-page-info">' + totalItems + ' items</span>');
+            $pag.append('<button class="button omc-page-btn" data-page="' + (currentPage + 1) + '" ' + (currentPage >= totalPages ? 'disabled' : '') + '>&raquo;</button>');
+            $pag.append('<span class="omc-page-info">' + totalItems + ' items</span>');
         },
 
         updateTabCounts: function(trashCount) {
-            var $cells = $('#dui-stats .form-table td strong');
+            var $cells = $('#omc-stats .form-table td strong');
             var unused = $cells.eq(2).text().replace(/,/g, '') || '0';
             var whitelist = $cells.eq(4).text().replace(/,/g, '') || '0';
-            $('#dui-unused-count').text('(' + unused + ')');
-            $('#dui-whitelist-count').text('(' + whitelist + ')');
+            $('#omc-unused-count').text('(' + unused + ')');
+            $('#omc-whitelist-count').text('(' + whitelist + ')');
             if (typeof trashCount !== 'undefined') {
-                $('#dui-trash-count').text('(' + trashCount + ')');
+                $('#omc-trash-count').text('(' + trashCount + ')');
             }
         },
 
         updateBulkBar: function() {
             // Show/hide relevant bulk buttons based on tab
             var tab = this.currentTab;
-            $('#dui-bulk-trash-btn, #dui-bulk-whitelist-btn').toggle(tab === 'unused');
-            $('#dui-bulk-remove-whitelist-btn').toggle(tab === 'whitelist');
-            $('#dui-bulk-delete-btn, #dui-bulk-restore-btn').toggle(tab === 'trash');
+            $('#omc-bulk-trash-btn, #omc-bulk-whitelist-btn').toggle(tab === 'unused');
+            $('#omc-bulk-remove-whitelist-btn').toggle(tab === 'whitelist');
+            $('#omc-bulk-delete-btn, #omc-bulk-restore-btn').toggle(tab === 'trash');
         },
 
         // ─── Actions ────────────────────────────────────────────────
 
         trashSingle: function(id, $row) {
             var self = this;
-            $row.addClass('dui-loading');
+            $row.addClass('omc-loading');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_trash_single',
-                nonce: duiObj.nonce,
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_trash_single',
+                nonce: omcObj.nonce,
                 post_id: id
             }, function(res) {
                 if (res.success) {
@@ -396,7 +396,7 @@
                     self.toast(res.data.message, 'success');
                     self.refreshAfterAction();
                 } else {
-                    $row.removeClass('dui-loading');
+                    $row.removeClass('omc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -404,11 +404,11 @@
 
         deleteSingle: function(id, $row) {
             var self = this;
-            $row.addClass('dui-loading');
+            $row.addClass('omc-loading');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_delete_single',
-                nonce: duiObj.nonce,
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_delete_single',
+                nonce: omcObj.nonce,
                 post_id: id
             }, function(res) {
                 if (res.success) {
@@ -416,7 +416,7 @@
                     self.toast(res.data.message, 'success');
                     self.refreshAfterAction();
                 } else {
-                    $row.removeClass('dui-loading');
+                    $row.removeClass('omc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -424,11 +424,11 @@
 
         whitelistSingle: function(id, $row) {
             var self = this;
-            $row.addClass('dui-loading');
+            $row.addClass('omc-loading');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_whitelist_single',
-                nonce: duiObj.nonce,
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_whitelist_single',
+                nonce: omcObj.nonce,
                 post_id: id
             }, function(res) {
                 if (res.success) {
@@ -436,7 +436,7 @@
                     self.toast(res.data.message, 'success');
                     self.refreshAfterAction();
                 } else {
-                    $row.removeClass('dui-loading');
+                    $row.removeClass('omc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -444,11 +444,11 @@
 
         removeWhitelist: function(id, $row) {
             var self = this;
-            $row.addClass('dui-loading');
+            $row.addClass('omc-loading');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_remove_whitelist',
-                nonce: duiObj.nonce,
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_remove_whitelist',
+                nonce: omcObj.nonce,
                 post_id: id
             }, function(res) {
                 if (res.success) {
@@ -456,7 +456,7 @@
                     self.toast(res.data.message, 'success');
                     self.refreshAfterAction();
                 } else {
-                    $row.removeClass('dui-loading');
+                    $row.removeClass('omc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -464,11 +464,11 @@
 
         restoreSingle: function(id, $row) {
             var self = this;
-            $row.addClass('dui-loading');
+            $row.addClass('omc-loading');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_restore_single',
-                nonce: duiObj.nonce,
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_restore_single',
+                nonce: omcObj.nonce,
                 post_id: id
             }, function(res) {
                 if (res.success) {
@@ -476,7 +476,7 @@
                     self.toast(res.data.message, 'success');
                     self.refreshAfterAction();
                 } else {
-                    $row.removeClass('dui-loading');
+                    $row.removeClass('omc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -484,18 +484,18 @@
 
         trashBulk: function(ids) {
             var self = this;
-            $('.dui-item-cb:checked').closest('tr').addClass('dui-loading');
+            $('.omc-item-cb:checked').closest('tr').addClass('omc-loading');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_trash_bulk',
-                nonce: duiObj.nonce,
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_trash_bulk',
+                nonce: omcObj.nonce,
                 ids: ids
             }, function(res) {
                 if (res.success) {
                     self.toast(res.data.message, 'success');
                     self.loadResults();
                 } else {
-                    $('.dui-loading').removeClass('dui-loading');
+                    $('.omc-loading').removeClass('omc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -503,18 +503,18 @@
 
         deleteBulk: function(ids) {
             var self = this;
-            $('.dui-item-cb:checked').closest('tr').addClass('dui-loading');
+            $('.omc-item-cb:checked').closest('tr').addClass('omc-loading');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_delete_bulk',
-                nonce: duiObj.nonce,
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_delete_bulk',
+                nonce: omcObj.nonce,
                 ids: ids
             }, function(res) {
                 if (res.success) {
                     self.toast(res.data.message, 'success');
                     self.loadResults();
                 } else {
-                    $('.dui-loading').removeClass('dui-loading');
+                    $('.omc-loading').removeClass('omc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -522,18 +522,18 @@
 
         whitelistBulk: function(ids) {
             var self = this;
-            $('.dui-item-cb:checked').closest('tr').addClass('dui-loading');
+            $('.omc-item-cb:checked').closest('tr').addClass('omc-loading');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_whitelist_bulk',
-                nonce: duiObj.nonce,
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_whitelist_bulk',
+                nonce: omcObj.nonce,
                 ids: ids
             }, function(res) {
                 if (res.success) {
                     self.toast(res.data.message, 'success');
                     self.loadResults();
                 } else {
-                    $('.dui-loading').removeClass('dui-loading');
+                    $('.omc-loading').removeClass('omc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -541,18 +541,18 @@
 
         removeWhitelistBulk: function(ids) {
             var self = this;
-            $('.dui-item-cb:checked').closest('tr').addClass('dui-loading');
+            $('.omc-item-cb:checked').closest('tr').addClass('omc-loading');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_remove_whitelist_bulk',
-                nonce: duiObj.nonce,
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_remove_whitelist_bulk',
+                nonce: omcObj.nonce,
                 ids: ids
             }, function(res) {
                 if (res.success) {
                     self.toast(res.data.message, 'success');
                     self.loadResults();
                 } else {
-                    $('.dui-loading').removeClass('dui-loading');
+                    $('.omc-loading').removeClass('omc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -560,18 +560,18 @@
 
         restoreBulk: function(ids) {
             var self = this;
-            $('.dui-item-cb:checked').closest('tr').addClass('dui-loading');
+            $('.omc-item-cb:checked').closest('tr').addClass('omc-loading');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_restore_bulk',
-                nonce: duiObj.nonce,
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_restore_bulk',
+                nonce: omcObj.nonce,
                 ids: ids
             }, function(res) {
                 if (res.success) {
                     self.toast(res.data.message, 'success');
                     self.loadResults();
                 } else {
-                    $('.dui-loading').removeClass('dui-loading');
+                    $('.omc-loading').removeClass('omc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -579,10 +579,10 @@
 
         trashAll: function() {
             var self = this;
-            var $btn = $('#dui-trash-all-btn');
-            var $progress = $('#dui-progress-wrap');
-            var $fill = $('#dui-progress-fill');
-            var $text = $('#dui-progress-text');
+            var $btn = $('#omc-trash-all-btn');
+            var $progress = $('#omc-progress-wrap');
+            var $fill = $('#omc-progress-fill');
+            var $text = $('#omc-progress-text');
             var totalStart = 0;
 
             $btn.prop('disabled', true).text('Trashing...');
@@ -595,12 +595,12 @@
 
         trashAllBatch: function(totalStart) {
             var self = this;
-            var $fill = $('#dui-progress-fill');
-            var $text = $('#dui-progress-text');
+            var $fill = $('#omc-progress-fill');
+            var $text = $('#omc-progress-text');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_trash_all_batch',
-                nonce: duiObj.nonce
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_trash_all_batch',
+                nonce: omcObj.nonce
             }, function(res) {
                 if (!res.success) {
                     self.toast('Error trashing files', 'error');
@@ -615,7 +615,7 @@
                 $text.text(pct + '% — ' + trashed + ' / ' + totalStart + ' trashed');
 
                 // Update tab counts live
-                $('#dui-unused-count').text('(' + res.data.remaining + ')');
+                $('#omc-unused-count').text('(' + res.data.remaining + ')');
 
                 if (res.data.done) {
                     $fill.css('width', '100%');
@@ -624,7 +624,7 @@
                     self.currentPage = 1;
                     self.loadResults();
                     setTimeout(function() {
-                        $('#dui-progress-wrap').fadeOut();
+                        $('#omc-progress-wrap').fadeOut();
                         self.resetTrashAllUI();
                     }, 3000);
                 } else {
@@ -637,15 +637,15 @@
         },
 
         resetTrashAllUI: function() {
-            $('#dui-trash-all-btn').prop('disabled', false).text('Trash All Unused');
+            $('#omc-trash-all-btn').prop('disabled', false).text('Trash All Unused');
         },
 
         emptyTrash: function() {
             var self = this;
-            var $btn = $('#dui-empty-trash-btn');
-            var $progress = $('#dui-progress-wrap');
-            var $fill = $('#dui-progress-fill');
-            var $text = $('#dui-progress-text');
+            var $btn = $('#omc-empty-trash-btn');
+            var $progress = $('#omc-progress-wrap');
+            var $fill = $('#omc-progress-fill');
+            var $text = $('#omc-progress-text');
             var totalStart = 0;
 
             $btn.prop('disabled', true).text('Deleting...');
@@ -658,12 +658,12 @@
 
         emptyTrashBatch: function(totalStart) {
             var self = this;
-            var $fill = $('#dui-progress-fill');
-            var $text = $('#dui-progress-text');
+            var $fill = $('#omc-progress-fill');
+            var $text = $('#omc-progress-text');
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_empty_trash_batch',
-                nonce: duiObj.nonce
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_empty_trash_batch',
+                nonce: omcObj.nonce
             }, function(res) {
                 if (!res.success) {
                     self.toast('Error deleting files', 'error');
@@ -678,7 +678,7 @@
                 $text.text(pct + '% — ' + deleted + ' / ' + totalStart + ' permanently deleted');
 
                 // Update trash tab count live
-                $('#dui-trash-count').text('(' + res.data.remaining + ')');
+                $('#omc-trash-count').text('(' + res.data.remaining + ')');
 
                 if (res.data.done) {
                     $fill.css('width', '100%');
@@ -687,7 +687,7 @@
                     self.currentPage = 1;
                     self.loadResults();
                     setTimeout(function() {
-                        $('#dui-progress-wrap').fadeOut();
+                        $('#omc-progress-wrap').fadeOut();
                         self.resetEmptyTrashUI();
                     }, 3000);
                 } else {
@@ -700,23 +700,23 @@
         },
 
         resetEmptyTrashUI: function() {
-            $('#dui-empty-trash-btn').prop('disabled', false).text('Empty Trash');
+            $('#omc-empty-trash-btn').prop('disabled', false).text('Empty Trash');
         },
 
         saveCronSettings: function() {
             var self = this;
-            var enabled = $('#dui-cron-enabled').is(':checked');
-            var frequency = $('#dui-cron-frequency').val();
+            var enabled = $('#omc-cron-enabled').is(':checked');
+            var frequency = $('#omc-cron-frequency').val();
 
-            $.post(duiObj.ajaxurl, {
-                action: 'dui_save_cron_settings',
-                nonce: duiObj.nonce,
+            $.post(omcObj.ajaxurl, {
+                action: 'omc_save_cron_settings',
+                nonce: omcObj.nonce,
                 enabled: enabled ? 1 : 0,
                 frequency: frequency
             }, function(res) {
                 if (res.success) {
                     self.toast(res.data.message, 'success');
-                    $('#dui-next-run').text(res.data.next_run);
+                    $('#omc-next-run').text(res.data.next_run);
                 } else {
                     self.toast(res.data || 'Error saving settings', 'error');
                 }
@@ -727,22 +727,22 @@
 
         getSelectedIds: function() {
             var ids = [];
-            $('.dui-item-cb:checked').each(function() {
+            $('.omc-item-cb:checked').each(function() {
                 ids.push(parseInt($(this).val()));
             });
             return ids;
         },
 
         updateSelectedInfo: function() {
-            var count = $('.dui-item-cb:checked').length;
+            var count = $('.omc-item-cb:checked').length;
             var totalSize = 0;
-            $('.dui-item-cb:checked').each(function() {
+            $('.omc-item-cb:checked').each(function() {
                 totalSize += parseInt($(this).data('size')) || 0;
             });
             if (count > 0) {
-                $('#dui-selected-info').text(count + ' selected (' + this.formatSize(totalSize) + ')');
+                $('#omc-selected-info').text(count + ' selected (' + this.formatSize(totalSize) + ')');
             } else {
-                $('#dui-selected-info').text('');
+                $('#omc-selected-info').text('');
             }
         },
 
@@ -764,7 +764,7 @@
 
         toast: function(message, type) {
             type = type || 'info';
-            var $toast = $('<div class="dui-toast ' + type + '">' + message + '</div>');
+            var $toast = $('<div class="omc-toast ' + type + '">' + message + '</div>');
             $('body').append($toast);
             setTimeout(function() { $toast.addClass('show'); }, 10);
             setTimeout(function() {
@@ -775,8 +775,8 @@
     };
 
     $(document).ready(function() {
-        if ($('#dui-scan-btn').length) {
-            DUI.init();
+        if ($('#omc-scan-btn').length) {
+            OMC.init();
         }
     });
 

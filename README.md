@@ -1,15 +1,15 @@
 <p align="center">
-  <img src="assets/images/banner-772x250.png" alt="Delete Unused Images Banner" width="772">
+  <img src="assets/images/banner-772x250.png" alt="Oli Media Cleaner Banner" width="772">
 </p>
 
-<h1 align="center">Delete Unused Images</h1>
+<h1 align="center">Oli Media Cleaner</h1>
 
 <p align="center">
   <img src="assets/images/icon-256x256.png" alt="Plugin Icon" width="80">
 </p>
 
 <p align="center">
-  <a href="https://github.com/bigrat95/delete-unused-images/releases"><img src="https://img.shields.io/badge/version-1.4.0-blue" alt="Version"></a>
+  <a href="https://github.com/bigrat95/oli-media-cleaner/releases"><img src="https://img.shields.io/badge/version-1.5.0-blue" alt="Version"></a>
   <a href="https://wordpress.org/"><img src="https://img.shields.io/badge/WordPress-6.9-green" alt="WordPress"></a>
   <a href="https://php.net/"><img src="https://img.shields.io/badge/PHP-7.4%2B-purple" alt="PHP"></a>
   <a href="https://www.gnu.org/licenses/gpl-2.0.html"><img src="https://img.shields.io/badge/license-GPL--2.0--or--later-orange" alt="License"></a>
@@ -84,17 +84,17 @@ The plugin checks these sources to determine which media files are "in use":
 
 ### From GitHub
 
-1. Download the [latest release](https://github.com/bigrat95/delete-unused-images/releases)
-2. Upload the `delete-unused-images` folder to `/wp-content/plugins/`
+1. Download the [latest release](https://github.com/bigrat95/oli-media-cleaner/releases)
+2. Upload the `oli-media-cleaner` folder to `/wp-content/plugins/`
 3. Activate the plugin in **Plugins > Installed Plugins**
-4. Go to **Media > Unused Images** in the admin sidebar
+4. Go to **Media > Oli Media Cleaner** in the admin sidebar
 
 ### From WordPress Admin
 
 1. Go to **Plugins > Add New**
-2. Search for **Delete Unused Images**
+2. Search for **Oli Media Cleaner**
 3. Click **Install Now**, then **Activate**
-4. Go to **Media > Unused Images**
+4. Go to **Media > Oli Media Cleaner**
 
 ---
 
@@ -102,7 +102,7 @@ The plugin checks these sources to determine which media files are "in use":
 
 ### Running a Scan
 
-1. Navigate to **Media > Unused Images** in your WordPress admin
+1. Navigate to **Media > Oli Media Cleaner** in your WordPress admin
 2. Click the **Scan for Unused Media** button
 3. A progress bar will show real-time scanning progress
 4. Once complete, the results appear in the **Unused** tab
@@ -206,8 +206,8 @@ The schedule is cleared on plugin deactivation.
 ## Plugin Structure
 
 ```
-delete-unused-images/
-├── delete-unused-images.php    # Main plugin file, constants, includes
+oli-media-cleaner/
+├── oli-media-cleaner.php       # Main plugin file, constants, includes
 ├── readme.txt                  # WordPress.org readme
 ├── README.md                   # GitHub documentation (this file)
 ├── uninstall.php               # Cleanup on plugin deletion
@@ -229,20 +229,20 @@ delete-unused-images/
 
 | Class | File | Purpose |
 |-------|------|---------|
-| `DUI_Scanner` | `includes/class-scanner.php` | Collects used attachment IDs from all sources, calculates file sizes, resolves paths to IDs |
-| `DUI_Admin` | `includes/class-admin.php` | Admin menu, page rendering, AJAX handlers, cron scheduling, stats |
+| `OMC_Scanner` | `includes/class-scanner.php` | Collects used attachment IDs from all sources, calculates file sizes, resolves paths to IDs |
+| `OMC_Admin` | `includes/class-admin.php` | Admin menu, page rendering, AJAX handlers, cron scheduling, stats |
 
 ### WordPress Options Used
 
 | Option | Purpose |
 |--------|---------|
-| `dui_version` | Installed plugin version |
-| `dui_scan_results` | Array of unused attachment data from last scan |
-| `dui_scan_date` | Timestamp of last scan |
-| `dui_whitelist` | Array of whitelisted attachment IDs |
-| `dui_scan_used_ids` | Temporary: used IDs during batch scan |
-| `dui_cron_enabled` | Whether auto-cleanup is enabled |
-| `dui_cron_frequency` | Cron frequency (daily, twicedaily, weekly) |
+| `omc_version` | Installed plugin version |
+| `omc_scan_results` | Array of unused attachment data from last scan |
+| `omc_scan_date` | Timestamp of last scan |
+| `omc_whitelist` | Array of whitelisted attachment IDs |
+| `omc_scan_used_ids` | Temporary: used IDs during batch scan |
+| `omc_cron_enabled` | Whether auto-cleanup is enabled |
+| `omc_cron_frequency` | Cron frequency (daily, twicedaily, weekly) |
 
 All options are removed on plugin uninstall.
 
@@ -304,6 +304,13 @@ Per-page selector, pagination controls, and the Scheduled Auto-Cleanup settings 
 
 ## Changelog
 
+### 1.5.0
+- Renamed plugin from "Delete Unused Images" to "Oli Media Cleaner"
+- New slug: `oli-media-cleaner`, new prefix: `omc_`
+- Added "Empty Trash" button with batch progress bar
+- Added taxonomy image scanning
+- Live tab count updates during batch operations
+
 ### 1.4.0
 - Fixed all WordPress Plugin Check errors
 - Proper output escaping (`esc_html_e`, `esc_html__`, `esc_html`)
@@ -354,4 +361,4 @@ This plugin is licensed under the [GPL-2.0-or-later](https://www.gnu.org/license
 ---
 
 **Author:** [Olivier Bigras](https://olivierbigras.com)
-**GitHub:** [bigrat95/delete-unused-images](https://github.com/bigrat95/delete-unused-images)
+**GitHub:** [bigrat95/oli-media-cleaner](https://github.com/bigrat95/oli-media-cleaner)

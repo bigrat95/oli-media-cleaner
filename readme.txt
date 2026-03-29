@@ -1,4 +1,4 @@
-=== Delete Unused Images ===
+=== Oli Media Cleaner ===
 Contributors: bigrat95
 Tags: media, cleanup, unused images, media cleaner, disk space
 Requires at least: 5.8
@@ -12,7 +12,7 @@ Scan and remove unused media files from your WordPress site to free up disk spac
 
 == Description ==
 
-**Delete Unused Images** scans your entire WordPress site to find media files that are no longer in use. It performs a deep analysis across multiple sources to accurately determine which files are safe to remove.
+**Oli Media Cleaner** scans your entire WordPress site to find media files that are no longer in use. It performs a deep analysis across multiple sources to accurately determine which files are safe to remove.
 
 = What Gets Scanned =
 
@@ -42,7 +42,7 @@ Scan and remove unused media files from your WordPress site to free up disk spac
 
 = How to Use =
 
-1. Go to **Unused Images** in the WordPress admin sidebar
+1. Go to **Oli Media Cleaner** under **Media** in the WordPress admin sidebar
 2. Click **Scan for Unused Media**
 3. Review the results in the **Unused** tab
 4. **Whitelist** any files you want to keep
@@ -51,9 +51,9 @@ Scan and remove unused media files from your WordPress site to free up disk spac
 
 == Installation ==
 
-1. Upload the `delete-unused-images` folder to `/wp-content/plugins/`
+1. Upload the `oli-media-cleaner` folder to `/wp-content/plugins/`
 2. Activate the plugin through the **Plugins** menu in WordPress
-3. Go to **Unused Images** in the admin sidebar
+3. Go to **Oli Media Cleaner** under **Media** in the admin sidebar
 4. Click **Scan for Unused Media** to start
 
 == Frequently Asked Questions ==
@@ -100,6 +100,8 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 == Changelog ==
 
 = 1.5.0 =
+* Renamed plugin from "Delete Unused Images" to "Oli Media Cleaner"
+* New slug: oli-media-cleaner, new prefix: omc_
 * Added "Empty Trash" button — batch-deletes all trashed attachments with progress bar
 * Added taxonomy image scanning: WooCommerce category thumbnails, term descriptions, attribute descriptions
 * Added termmeta deep scan for images stored by third-party plugins

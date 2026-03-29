@@ -1,21 +1,21 @@
-/* Delete Unused Images – Minimal admin overrides */
+/* Oli Media Cleaner – Minimal admin overrides */
 
 .widefat td img { vertical-align: middle; }
-.widefat tbody tr.dui-loading { opacity: .4; pointer-events: none; }
+.widefat tbody tr.omc-loading { opacity: .4; pointer-events: none; }
 .tablenav .actions label { margin-right: 6px; }
-#dui-pagination { display: flex; align-items: center; gap: 2px; padding: 8px 0; }
-#dui-pagination .button { min-width: 30px; text-align: center; }
-#dui-pagination .button.active { background: #2271b1; color: #fff; border-color: #2271b1; }
-#dui-pagination .dui-page-info { font-size: 13px; color: #646970; margin: 0 6px; }
+#omc-pagination { display: flex; align-items: center; gap: 2px; padding: 8px 0; }
+#omc-pagination .button { min-width: 30px; text-align: center; }
+#omc-pagination .button.active { background: #2271b1; color: #fff; border-color: #2271b1; }
+#omc-pagination .omc-page-info { font-size: 13px; color: #646970; margin: 0 6px; }
 
-.dui-toast {
+.omc-toast {
     position: fixed; bottom: 30px; right: 30px;
     padding: 10px 18px; border-radius: 4px; color: #fff;
     font-size: 13px; z-index: 99999; opacity: 0;
     transform: translateY(10px); transition: all .3s;
     box-shadow: 0 2px 8px rgba(0,0,0,.15);
 }
-.dui-toast.show { opacity: 1; transform: translateY(0); }
-.dui-toast.success { background: #00a32a; }
-.dui-toast.error { background: #d63638; }
-.dui-toast.info { background: #2271b1; }
+.omc-toast.show { opacity: 1; transform: translateY(0); }
+.omc-toast.success { background: #00a32a; }
+.omc-toast.error { background: #d63638; }
+.omc-toast.info { background: #2271b1; }
