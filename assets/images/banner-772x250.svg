@@ -1,70 +1,48 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="772" height="250" viewBox="0 0 772 250">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#1e3a5f;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#0d1b2a;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#4da6ff;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#80d0ff;stop-opacity:1" />
-    </linearGradient>
-  </defs>
+  <!-- Dark background matching original -->
+  <rect width="772" height="250" fill="#2d2d2d"/>
   
-  <!-- Background -->
-  <rect width="772" height="250" fill="url(#bg)" rx="0"/>
-  
-  <!-- Subtle grid pattern -->
-  <g opacity="0.04">
-    <line x1="0" y1="50" x2="772" y2="50" stroke="#fff" stroke-width="1"/>
-    <line x1="0" y1="100" x2="772" y2="100" stroke="#fff" stroke-width="1"/>
-    <line x1="0" y1="150" x2="772" y2="150" stroke="#fff" stroke-width="1"/>
-    <line x1="0" y1="200" x2="772" y2="200" stroke="#fff" stroke-width="1"/>
-    <line x1="150" y1="0" x2="150" y2="250" stroke="#fff" stroke-width="1"/>
-    <line x1="300" y1="0" x2="300" y2="250" stroke="#fff" stroke-width="1"/>
-    <line x1="450" y1="0" x2="450" y2="250" stroke="#fff" stroke-width="1"/>
-    <line x1="600" y1="0" x2="600" y2="250" stroke="#fff" stroke-width="1"/>
-  </g>
-  
-  <!-- Decorative circles -->
-  <circle cx="680" cy="60" r="80" fill="#4da6ff" opacity="0.06"/>
-  <circle cx="100" cy="200" r="60" fill="#4da6ff" opacity="0.04"/>
-  
-  <!-- Broom/sweep icon -->
-  <g transform="translate(120, 85)" opacity="0.9">
-    <!-- Broom handle -->
-    <rect x="32" y="5" width="4" height="55" rx="2" fill="#4da6ff" transform="rotate(-15, 34, 30)"/>
-    <!-- Broom head -->
-    <path d="M15,58 Q20,50 25,58 L25,78 Q20,82 15,78 Z" fill="#80d0ff" transform="rotate(-15, 20, 68)"/>
-    <path d="M25,58 Q30,50 35,58 L35,78 Q30,82 25,78 Z" fill="#4da6ff" transform="rotate(-15, 30, 68)"/>
-    <path d="M35,58 Q40,50 45,58 L45,78 Q40,82 35,78 Z" fill="#80d0ff" transform="rotate(-15, 40, 68)"/>
-    <!-- Sparkles -->
-    <circle cx="55" cy="25" r="3" fill="#80d0ff" opacity="0.8"/>
-    <circle cx="65" cy="40" r="2" fill="#4da6ff" opacity="0.6"/>
-    <circle cx="10" cy="45" r="2.5" fill="#80d0ff" opacity="0.5"/>
-  </g>
-  
-  <!-- Plugin name -->
-  <text x="200" y="115" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="48" font-weight="700" fill="#ffffff" letter-spacing="-1">
+  <!-- Plugin name - large white text, left aligned -->
+  <text x="50" y="110" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="52" font-weight="700" fill="#ffffff" letter-spacing="-0.5">
     Oli Media Cleaner
   </text>
   
-  <!-- Tagline -->
-  <text x="200" y="150" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="16" fill="url(#accent)" letter-spacing="0.5">
-    Scan &amp; remove unused media files from WordPress
+  <!-- Tagline - smaller, slightly muted -->
+  <text x="50" y="150" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="18" fill="#b0b0b0" letter-spacing="0.3">
+    Automated Media Library Cleanup &amp; Storage Optimization
   </text>
   
-  <!-- Bottom accent line -->
-  <rect x="200" y="168" width="80" height="3" rx="1.5" fill="#4da6ff" opacity="0.6"/>
-  
-  <!-- Version badge -->
-  <g transform="translate(200, 185)">
-    <rect width="50" height="22" rx="11" fill="#4da6ff" opacity="0.15"/>
-    <text x="25" y="15" font-family="system-ui, sans-serif" font-size="11" fill="#80d0ff" text-anchor="middle" font-weight="600">v1.5.0</text>
+  <!-- Image icon (photos/gallery) - thin line art -->
+  <g transform="translate(555, 65)" fill="none" stroke="#c0c0c0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Frame -->
+    <rect x="0" y="0" width="56" height="48" rx="4"/>
+    <!-- Mountain/landscape -->
+    <polyline points="0,38 16,24 28,36 36,28 56,42"/>
+    <!-- Sun -->
+    <circle cx="42" cy="16" r="6"/>
   </g>
   
-  <!-- WordPress badge -->
-  <g transform="translate(260, 185)">
-    <rect width="80" height="22" rx="11" fill="#4da6ff" opacity="0.15"/>
-    <text x="40" y="15" font-family="system-ui, sans-serif" font-size="11" fill="#80d0ff" text-anchor="middle" font-weight="600">WordPress</text>
+  <!-- Arrow -->
+  <g transform="translate(625, 80)" fill="none" stroke="#888888" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="0" y1="8" x2="28" y2="8"/>
+    <polyline points="20,0 28,8 20,16"/>
+  </g>
+  
+  <!-- Trash/recycle icon - thin line art -->
+  <g transform="translate(668, 58)" fill="none" stroke="#c0c0c0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Lid -->
+    <line x1="2" y1="12" x2="54" y2="12"/>
+    <path d="M18,12 L18,6 Q18,2 22,2 L34,2 Q38,2 38,6 L38,12"/>
+    <!-- Can body -->
+    <path d="M6,12 L10,54 Q10,58 14,58 L42,58 Q46,58 46,54 L50,12"/>
+    <!-- Lines inside -->
+    <line x1="22" y1="22" x2="22" y2="48"/>
+    <line x1="34" y1="22" x2="34" y2="48"/>
+    <!-- X mark for deletion -->
+    <g transform="translate(36, 42)" stroke="#c0c0c0" stroke-width="3">
+      <circle cx="12" cy="12" r="14" fill="#2d2d2d" stroke="#c0c0c0" stroke-width="2.5"/>
+      <line x1="5" y1="5" x2="19" y2="19"/>
+      <line x1="19" y1="5" x2="5" y2="19"/>
+    </g>
   </g>
 </svg>

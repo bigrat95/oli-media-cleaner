@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/images/banner-772x250.png" alt="Oli Media Cleaner Banner" width="772">
+  <img src="assets/images/banner-772x250.svg" alt="Oli Media Cleaner Banner" width="772">
 </p>
 
 <h1 align="center">Oli Media Cleaner</h1>
