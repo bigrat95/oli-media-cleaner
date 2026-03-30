@@ -101,7 +101,7 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 
 = 1.5.0 =
 * Renamed plugin from "Delete Unused Images" to "Oli Media Cleaner"
-* New slug: oli-media-cleaner, new prefix: omc_
+* New slug: oli-media-cleaner, new prefix: olimc_
 * Added "Empty Trash" button — batch-deletes all trashed attachments with progress bar
 * Added taxonomy image scanning: WooCommerce category thumbnails, term descriptions, attribute descriptions
 * Added termmeta deep scan for images stored by third-party plugins

@@ -16,16 +16,16 @@
 
 defined('ABSPATH') || exit;
 
-define('OMC_VERSION', '1.5.0');
-define('OMC_PLUGIN_DIR', plugin_dir_path(__FILE__));
-define('OMC_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('OMC_BASENAME', plugin_basename(__FILE__));
+define('OLIMC_VERSION', '1.5.0');
+define('OLIMC_PLUGIN_DIR', plugin_dir_path(__FILE__));
+define('OLIMC_PLUGIN_URL', plugin_dir_url(__FILE__));
+define('OLIMC_BASENAME', plugin_basename(__FILE__));
 
-require_once OMC_PLUGIN_DIR . 'includes/class-scanner.php';
-require_once OMC_PLUGIN_DIR . 'includes/class-admin.php';
+require_once OLIMC_PLUGIN_DIR . 'includes/class-scanner.php';
+require_once OLIMC_PLUGIN_DIR . 'includes/class-admin.php';
 
-register_activation_hook(__FILE__, ['OMC_Admin', 'activate']);
-register_deactivation_hook(__FILE__, ['OMC_Admin', 'deactivate']);
+register_activation_hook(__FILE__, ['OLIMC_Admin', 'activate']);
+register_deactivation_hook(__FILE__, ['OLIMC_Admin', 'deactivate']);
 
 // Boot
-OMC_Admin::init();
+OLIMC_Admin::init();

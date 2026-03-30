@@ -1,7 +1,7 @@
 (function($) {
     'use strict';
 
-    var OMC = {
+    var OLIMC = {
         currentTab: 'unused',
         currentPage: 1,
         scanning: false,
@@ -24,7 +24,7 @@
             var self = this;
 
             // Scan button
-            $('#omc-scan-btn').on('click', function() {
+            $('#olimc-scan-btn').on('click', function() {
                 self.startScan();
             });
 
@@ -44,112 +44,112 @@
                     self.filterType = '';
                     self.sortBy = 'date';
                     self.sortOrder = 'desc';
-                    $('#omc-search').val('');
-                    $('#omc-filter-type').val('');
+                    $('#olimc-search').val('');
+                    $('#olimc-filter-type').val('');
                     self.loadResults();
                     self.updateBulkBar();
                 }
             });
 
             // Select all checkbox
-            $(document).on('change', '#omc-select-all, .omc-select-all-header', function() {
+            $(document).on('change', '#olimc-select-all, .olimc-select-all-header', function() {
                 var checked = $(this).prop('checked');
-                $('.omc-item-cb').prop('checked', checked);
-                $('#omc-select-all, .omc-select-all-header').prop('checked', checked);
+                $('.olimc-item-cb').prop('checked', checked);
+                $('#olimc-select-all, .olimc-select-all-header').prop('checked', checked);
                 self.updateSelectedInfo();
             });
 
             // Individual checkbox
-            $(document).on('change', '.omc-item-cb', function() {
+            $(document).on('change', '.olimc-item-cb', function() {
                 self.updateSelectedInfo();
             });
 
             // Single actions
-            $(document).on('click', '.omc-trash-btn', function() {
+            $(document).on('click', '.olimc-trash-btn', function() {
                 var id = $(this).data('id');
-                if (confirm(omcObj.strings.confirm_trash)) {
+                if (confirm(olimcObj.strings.confirm_trash)) {
                     self.trashSingle(id, $(this).closest('tr'));
                 }
             });
 
-            $(document).on('click', '.omc-delete-btn', function() {
+            $(document).on('click', '.olimc-delete-btn', function() {
                 var id = $(this).data('id');
-                if (confirm(omcObj.strings.confirm_delete)) {
+                if (confirm(olimcObj.strings.confirm_delete)) {
                     self.deleteSingle(id, $(this).closest('tr'));
                 }
             });
 
-            $(document).on('click', '.omc-whitelist-btn', function() {
+            $(document).on('click', '.olimc-whitelist-btn', function() {
                 var id = $(this).data('id');
                 self.whitelistSingle(id, $(this).closest('tr'));
             });
 
-            $(document).on('click', '.omc-remove-whitelist-btn', function() {
+            $(document).on('click', '.olimc-remove-whitelist-btn', function() {
                 var id = $(this).data('id');
                 self.removeWhitelist(id, $(this).closest('tr'));
             });
 
-            $(document).on('click', '.omc-restore-btn', function() {
+            $(document).on('click', '.olimc-restore-btn', function() {
                 var id = $(this).data('id');
                 self.restoreSingle(id, $(this).closest('tr'));
             });
 
             // Bulk actions
-            $('#omc-bulk-trash-btn').on('click', function() {
+            $('#olimc-bulk-trash-btn').on('click', function() {
                 var ids = self.getSelectedIds();
-                if (!ids.length) { self.toast(omcObj.strings.no_selection, 'info'); return; }
-                if (confirm(omcObj.strings.confirm_bulk_trash)) {
+                if (!ids.length) { self.toast(olimcObj.strings.no_selection, 'info'); return; }
+                if (confirm(olimcObj.strings.confirm_bulk_trash)) {
                     self.trashBulk(ids);
                 }
             });
 
-            $('#omc-bulk-delete-btn').on('click', function() {
+            $('#olimc-bulk-delete-btn').on('click', function() {
                 var ids = self.getSelectedIds();
-                if (!ids.length) { self.toast(omcObj.strings.no_selection, 'info'); return; }
-                if (confirm(omcObj.strings.confirm_bulk_delete)) {
+                if (!ids.length) { self.toast(olimcObj.strings.no_selection, 'info'); return; }
+                if (confirm(olimcObj.strings.confirm_bulk_delete)) {
                     self.deleteBulk(ids);
                 }
             });
 
-            $('#omc-bulk-whitelist-btn').on('click', function() {
+            $('#olimc-bulk-whitelist-btn').on('click', function() {
                 var ids = self.getSelectedIds();
-                if (!ids.length) { self.toast(omcObj.strings.no_selection, 'info'); return; }
+                if (!ids.length) { self.toast(olimcObj.strings.no_selection, 'info'); return; }
                 self.whitelistBulk(ids);
             });
 
-            $('#omc-bulk-remove-whitelist-btn').on('click', function() {
+            $('#olimc-bulk-remove-whitelist-btn').on('click', function() {
                 var ids = self.getSelectedIds();
-                if (!ids.length) { self.toast(omcObj.strings.no_selection, 'info'); return; }
+                if (!ids.length) { self.toast(olimcObj.strings.no_selection, 'info'); return; }
                 if (confirm('Remove selected items from whitelist?')) {
                     self.removeWhitelistBulk(ids);
                 }
             });
 
-            $('#omc-bulk-restore-btn').on('click', function() {
+            $('#olimc-bulk-restore-btn').on('click', function() {
                 var ids = self.getSelectedIds();
-                if (!ids.length) { self.toast(omcObj.strings.no_selection, 'info'); return; }
+                if (!ids.length) { self.toast(olimcObj.strings.no_selection, 'info'); return; }
                 self.restoreBulk(ids);
             });
 
             // Trash All
-            $('#omc-trash-all-btn').on('click', function() {
-                if (!confirm(omcObj.strings.confirm_trash_all)) return;
+            $('#olimc-trash-all-btn').on('click', function() {
+                if (!confirm(olimcObj.strings.confirm_trash_all)) return;
                 self.trashAll();
             });
 
             // Empty Trash
-            $('#omc-empty-trash-btn').on('click', function() {
-                if (!confirm(omcObj.strings.confirm_empty_trash)) return;
+            $('#olimc-empty-trash-btn').on('click', function() {
+                if (!confirm(olimcObj.strings.confirm_empty_trash)) return;
                 self.emptyTrash();
             });
 
             // Cron settings
-            $('#omc-save-cron-btn').on('click', function() {
+            $('#olimc-save-cron-btn').on('click', function() {
                 self.saveCronSettings();
             });
 
             // Sort by column header
-            $(document).on('click', '.omc-sortable', function() {
+            $(document).on('click', '.olimc-sortable', function() {
                 var col = $(this).data('sort');
                 if (self.sortBy === col) {
                     self.sortOrder = self.sortOrder === 'asc' ? 'desc' : 'asc';
@@ -162,26 +162,26 @@
             });
 
             // Per page
-            $('#omc-per-page').on('change', function() {
+            $('#olimc-per-page').on('change', function() {
                 self.perPage = parseInt($(this).val());
                 self.currentPage = 1;
                 self.loadResults();
             });
 
             // Filter by type
-            $('#omc-filter-type').on('change', function() {
+            $('#olimc-filter-type').on('change', function() {
                 self.filterType = $(this).val();
                 self.currentPage = 1;
                 self.loadResults();
             });
 
             // Search
-            $('#omc-search-btn').on('click', function() {
-                self.searchTerm = $('#omc-search').val().trim();
+            $('#olimc-search-btn').on('click', function() {
+                self.searchTerm = $('#olimc-search').val().trim();
                 self.currentPage = 1;
                 self.loadResults();
             });
-            $('#omc-search').on('keypress', function(e) {
+            $('#olimc-search').on('keypress', function(e) {
                 if (e.which === 13) {
                     e.preventDefault();
                     self.searchTerm = $(this).val().trim();
@@ -197,12 +197,12 @@
             });
 
             // Pagination
-            $(document).on('click', '.omc-page-btn', function() {
+            $(document).on('click', '.olimc-page-btn', function() {
                 var page = $(this).data('page');
                 if (page && page !== self.currentPage) {
                     self.currentPage = page;
                     self.loadResults();
-                    $('html, body').animate({ scrollTop: $('#omc-results').offset().top - 50 }, 300);
+                    $('html, body').animate({ scrollTop: $('#olimc-results').offset().top - 50 }, 300);
                 }
             });
         },
@@ -214,20 +214,20 @@
             this.scanning = true;
 
             var self = this;
-            var $btn = $('#omc-scan-btn');
-            var $progress = $('#omc-progress-wrap');
-            var $fill = $('#omc-progress-fill');
-            var $text = $('#omc-progress-text');
+            var $btn = $('#olimc-scan-btn');
+            var $progress = $('#olimc-progress-wrap');
+            var $fill = $('#olimc-progress-fill');
+            var $text = $('#olimc-progress-text');
 
-            $btn.prop('disabled', true).text(omcObj.strings.scanning);
+            $btn.prop('disabled', true).text(olimcObj.strings.scanning);
             $progress.show();
             $fill.css('width', '0%');
             $text.text('0%');
 
             // Step 1: Start scan (collect used IDs)
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_start_scan',
-                nonce: omcObj.nonce
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_start_scan',
+                nonce: olimcObj.nonce
             }, function(res) {
                 if (!res.success) {
                     self.toast(res.data || 'Scan failed', 'error');
@@ -248,12 +248,12 @@
 
         scanBatch: function(offset, total) {
             var self = this;
-            var $fill = $('#omc-progress-fill');
-            var $text = $('#omc-progress-text');
+            var $fill = $('#olimc-progress-fill');
+            var $text = $('#olimc-progress-text');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_scan_batch',
-                nonce: omcObj.nonce,
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_scan_batch',
+                nonce: olimcObj.nonce,
                 offset: offset
             }, function(res) {
                 if (!res.success) {
@@ -268,15 +268,15 @@
 
                 if (res.data.done) {
                     $fill.css('width', '100%');
-                    $text.text(omcObj.strings.scan_complete + ' ' + res.data.unused_found + ' unused files.');
-                    self.toast(omcObj.strings.scan_complete + ' Found ' + res.data.unused_found + ' unused files.', 'success');
+                    $text.text(olimcObj.strings.scan_complete + ' ' + res.data.unused_found + ' unused files.');
+                    self.toast(olimcObj.strings.scan_complete + ' Found ' + res.data.unused_found + ' unused files.', 'success');
                     self.scanning = false;
                     self.currentPage = 1;
                     self.loadResults();
 
                     setTimeout(function() {
-                        $('#omc-progress-wrap').fadeOut();
-                        $('#omc-scan-btn').prop('disabled', false).text('Re-Scan');
+                        $('#olimc-progress-wrap').fadeOut();
+                        $('#olimc-scan-btn').prop('disabled', false).text('Re-Scan');
                     }, 3000);
                 } else {
                     // Next batch
@@ -290,21 +290,21 @@
 
         resetScanUI: function() {
             this.scanning = false;
-            $('#omc-scan-btn').prop('disabled', false).text('Scan for Unused Media');
-            $('#omc-progress-wrap').hide();
+            $('#olimc-scan-btn').prop('disabled', false).text('Scan for Unused Media');
+            $('#olimc-progress-wrap').hide();
         },
 
         // ─── Load results via AJAX ──────────────────────────────────
 
         loadResults: function() {
             var self = this;
-            var $results = $('#omc-results');
+            var $results = $('#olimc-results');
 
             $results.css('opacity', '0.5');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_get_results',
-                nonce: omcObj.nonce,
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_get_results',
+                nonce: olimcObj.nonce,
                 tab: this.currentTab,
                 page: this.currentPage,
                 search: this.searchTerm,
@@ -315,17 +315,17 @@
             }, function(res) {
                 if (res.success) {
                     $results.html(res.data.html).css('opacity', '1');
-                    $('#omc-stats').html(res.data.stats);
+                    $('#olimc-stats').html(res.data.stats);
                     self.buildPagination(res.data.total_pages || 0, res.data.total_items || 0);
                     self.updateTabCounts(res.data.trash_count);
-                    $('#omc-select-all, .omc-select-all-header').prop('checked', false);
+                    $('#olimc-select-all, .olimc-select-all-header').prop('checked', false);
                     self.updateSelectedInfo();
                 }
             });
         },
 
         buildPagination: function(totalPages, totalItems) {
-            var $pag = $('#omc-pagination');
+            var $pag = $('#olimc-pagination');
             if (!$pag.length) return;
             totalPages = totalPages || 0;
             totalItems = totalItems || 0;
@@ -334,61 +334,61 @@
             $pag.empty();
 
             if (totalPages <= 1) {
-                if (totalItems > 0) $pag.append('<span class="omc-page-info">' + totalItems + ' items</span>');
+                if (totalItems > 0) $pag.append('<span class="olimc-page-info">' + totalItems + ' items</span>');
                 return;
             }
 
-            $pag.append('<button class="button omc-page-btn" data-page="' + (currentPage - 1) + '" ' + (currentPage <= 1 ? 'disabled' : '') + '>&laquo;</button>');
+            $pag.append('<button class="button olimc-page-btn" data-page="' + (currentPage - 1) + '" ' + (currentPage <= 1 ? 'disabled' : '') + '>&laquo;</button>');
 
             var start = Math.max(1, currentPage - 2);
             var end = Math.min(totalPages, currentPage + 2);
 
             if (start > 1) {
-                $pag.append('<button class="button omc-page-btn" data-page="1">1</button>');
-                if (start > 2) $pag.append('<span class="omc-page-info">…</span>');
+                $pag.append('<button class="button olimc-page-btn" data-page="1">1</button>');
+                if (start > 2) $pag.append('<span class="olimc-page-info">…</span>');
             }
 
             for (var i = start; i <= end; i++) {
-                $pag.append('<button class="button omc-page-btn ' + (i === currentPage ? 'active' : '') + '" data-page="' + i + '">' + i + '</button>');
+                $pag.append('<button class="button olimc-page-btn ' + (i === currentPage ? 'active' : '') + '" data-page="' + i + '">' + i + '</button>');
             }
 
             if (end < totalPages) {
-                if (end < totalPages - 1) $pag.append('<span class="omc-page-info">…</span>');
-                $pag.append('<button class="button omc-page-btn" data-page="' + totalPages + '">' + totalPages + '</button>');
+                if (end < totalPages - 1) $pag.append('<span class="olimc-page-info">…</span>');
+                $pag.append('<button class="button olimc-page-btn" data-page="' + totalPages + '">' + totalPages + '</button>');
             }
 
-            $pag.append('<button class="button omc-page-btn" data-page="' + (currentPage + 1) + '" ' + (currentPage >= totalPages ? 'disabled' : '') + '>&raquo;</button>');
-            $pag.append('<span class="omc-page-info">' + totalItems + ' items</span>');
+            $pag.append('<button class="button olimc-page-btn" data-page="' + (currentPage + 1) + '" ' + (currentPage >= totalPages ? 'disabled' : '') + '>&raquo;</button>');
+            $pag.append('<span class="olimc-page-info">' + totalItems + ' items</span>');
         },
 
         updateTabCounts: function(trashCount) {
-            var $cells = $('#omc-stats .form-table td strong');
+            var $cells = $('#olimc-stats .form-table td strong');
             var unused = $cells.eq(2).text().replace(/,/g, '') || '0';
             var whitelist = $cells.eq(4).text().replace(/,/g, '') || '0';
-            $('#omc-unused-count').text('(' + unused + ')');
-            $('#omc-whitelist-count').text('(' + whitelist + ')');
+            $('#olimc-unused-count').text('(' + unused + ')');
+            $('#olimc-whitelist-count').text('(' + whitelist + ')');
             if (typeof trashCount !== 'undefined') {
-                $('#omc-trash-count').text('(' + trashCount + ')');
+                $('#olimc-trash-count').text('(' + trashCount + ')');
             }
         },
 
         updateBulkBar: function() {
             // Show/hide relevant bulk buttons based on tab
             var tab = this.currentTab;
-            $('#omc-bulk-trash-btn, #omc-bulk-whitelist-btn').toggle(tab === 'unused');
-            $('#omc-bulk-remove-whitelist-btn').toggle(tab === 'whitelist');
-            $('#omc-bulk-delete-btn, #omc-bulk-restore-btn').toggle(tab === 'trash');
+            $('#olimc-bulk-trash-btn, #olimc-bulk-whitelist-btn').toggle(tab === 'unused');
+            $('#olimc-bulk-remove-whitelist-btn').toggle(tab === 'whitelist');
+            $('#olimc-bulk-delete-btn, #olimc-bulk-restore-btn').toggle(tab === 'trash');
         },
 
         // ─── Actions ────────────────────────────────────────────────
 
         trashSingle: function(id, $row) {
             var self = this;
-            $row.addClass('omc-loading');
+            $row.addClass('olimc-loading');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_trash_single',
-                nonce: omcObj.nonce,
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_trash_single',
+                nonce: olimcObj.nonce,
                 post_id: id
             }, function(res) {
                 if (res.success) {
@@ -396,7 +396,7 @@
                     self.toast(res.data.message, 'success');
                     self.refreshAfterAction();
                 } else {
-                    $row.removeClass('omc-loading');
+                    $row.removeClass('olimc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -404,11 +404,11 @@
 
         deleteSingle: function(id, $row) {
             var self = this;
-            $row.addClass('omc-loading');
+            $row.addClass('olimc-loading');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_delete_single',
-                nonce: omcObj.nonce,
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_delete_single',
+                nonce: olimcObj.nonce,
                 post_id: id
             }, function(res) {
                 if (res.success) {
@@ -416,7 +416,7 @@
                     self.toast(res.data.message, 'success');
                     self.refreshAfterAction();
                 } else {
-                    $row.removeClass('omc-loading');
+                    $row.removeClass('olimc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -424,11 +424,11 @@
 
         whitelistSingle: function(id, $row) {
             var self = this;
-            $row.addClass('omc-loading');
+            $row.addClass('olimc-loading');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_whitelist_single',
-                nonce: omcObj.nonce,
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_whitelist_single',
+                nonce: olimcObj.nonce,
                 post_id: id
             }, function(res) {
                 if (res.success) {
@@ -436,7 +436,7 @@
                     self.toast(res.data.message, 'success');
                     self.refreshAfterAction();
                 } else {
-                    $row.removeClass('omc-loading');
+                    $row.removeClass('olimc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -444,11 +444,11 @@
 
         removeWhitelist: function(id, $row) {
             var self = this;
-            $row.addClass('omc-loading');
+            $row.addClass('olimc-loading');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_remove_whitelist',
-                nonce: omcObj.nonce,
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_remove_whitelist',
+                nonce: olimcObj.nonce,
                 post_id: id
             }, function(res) {
                 if (res.success) {
@@ -456,7 +456,7 @@
                     self.toast(res.data.message, 'success');
                     self.refreshAfterAction();
                 } else {
-                    $row.removeClass('omc-loading');
+                    $row.removeClass('olimc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -464,11 +464,11 @@
 
         restoreSingle: function(id, $row) {
             var self = this;
-            $row.addClass('omc-loading');
+            $row.addClass('olimc-loading');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_restore_single',
-                nonce: omcObj.nonce,
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_restore_single',
+                nonce: olimcObj.nonce,
                 post_id: id
             }, function(res) {
                 if (res.success) {
@@ -476,7 +476,7 @@
                     self.toast(res.data.message, 'success');
                     self.refreshAfterAction();
                 } else {
-                    $row.removeClass('omc-loading');
+                    $row.removeClass('olimc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -484,18 +484,18 @@
 
         trashBulk: function(ids) {
             var self = this;
-            $('.omc-item-cb:checked').closest('tr').addClass('omc-loading');
+            $('.olimc-item-cb:checked').closest('tr').addClass('olimc-loading');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_trash_bulk',
-                nonce: omcObj.nonce,
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_trash_bulk',
+                nonce: olimcObj.nonce,
                 ids: ids
             }, function(res) {
                 if (res.success) {
                     self.toast(res.data.message, 'success');
                     self.loadResults();
                 } else {
-                    $('.omc-loading').removeClass('omc-loading');
+                    $('.olimc-loading').removeClass('olimc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -503,18 +503,18 @@
 
         deleteBulk: function(ids) {
             var self = this;
-            $('.omc-item-cb:checked').closest('tr').addClass('omc-loading');
+            $('.olimc-item-cb:checked').closest('tr').addClass('olimc-loading');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_delete_bulk',
-                nonce: omcObj.nonce,
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_delete_bulk',
+                nonce: olimcObj.nonce,
                 ids: ids
             }, function(res) {
                 if (res.success) {
                     self.toast(res.data.message, 'success');
                     self.loadResults();
                 } else {
-                    $('.omc-loading').removeClass('omc-loading');
+                    $('.olimc-loading').removeClass('olimc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -522,18 +522,18 @@
 
         whitelistBulk: function(ids) {
             var self = this;
-            $('.omc-item-cb:checked').closest('tr').addClass('omc-loading');
+            $('.olimc-item-cb:checked').closest('tr').addClass('olimc-loading');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_whitelist_bulk',
-                nonce: omcObj.nonce,
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_whitelist_bulk',
+                nonce: olimcObj.nonce,
                 ids: ids
             }, function(res) {
                 if (res.success) {
                     self.toast(res.data.message, 'success');
                     self.loadResults();
                 } else {
-                    $('.omc-loading').removeClass('omc-loading');
+                    $('.olimc-loading').removeClass('olimc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -541,18 +541,18 @@
 
         removeWhitelistBulk: function(ids) {
             var self = this;
-            $('.omc-item-cb:checked').closest('tr').addClass('omc-loading');
+            $('.olimc-item-cb:checked').closest('tr').addClass('olimc-loading');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_remove_whitelist_bulk',
-                nonce: omcObj.nonce,
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_remove_whitelist_bulk',
+                nonce: olimcObj.nonce,
                 ids: ids
             }, function(res) {
                 if (res.success) {
                     self.toast(res.data.message, 'success');
                     self.loadResults();
                 } else {
-                    $('.omc-loading').removeClass('omc-loading');
+                    $('.olimc-loading').removeClass('olimc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -560,18 +560,18 @@
 
         restoreBulk: function(ids) {
             var self = this;
-            $('.omc-item-cb:checked').closest('tr').addClass('omc-loading');
+            $('.olimc-item-cb:checked').closest('tr').addClass('olimc-loading');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_restore_bulk',
-                nonce: omcObj.nonce,
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_restore_bulk',
+                nonce: olimcObj.nonce,
                 ids: ids
             }, function(res) {
                 if (res.success) {
                     self.toast(res.data.message, 'success');
                     self.loadResults();
                 } else {
-                    $('.omc-loading').removeClass('omc-loading');
+                    $('.olimc-loading').removeClass('olimc-loading');
                     self.toast(res.data, 'error');
                 }
             });
@@ -579,10 +579,10 @@
 
         trashAll: function() {
             var self = this;
-            var $btn = $('#omc-trash-all-btn');
-            var $progress = $('#omc-progress-wrap');
-            var $fill = $('#omc-progress-fill');
-            var $text = $('#omc-progress-text');
+            var $btn = $('#olimc-trash-all-btn');
+            var $progress = $('#olimc-progress-wrap');
+            var $fill = $('#olimc-progress-fill');
+            var $text = $('#olimc-progress-text');
             var totalStart = 0;
 
             $btn.prop('disabled', true).text('Trashing...');
@@ -595,12 +595,12 @@
 
         trashAllBatch: function(totalStart) {
             var self = this;
-            var $fill = $('#omc-progress-fill');
-            var $text = $('#omc-progress-text');
+            var $fill = $('#olimc-progress-fill');
+            var $text = $('#olimc-progress-text');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_trash_all_batch',
-                nonce: omcObj.nonce
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_trash_all_batch',
+                nonce: olimcObj.nonce
             }, function(res) {
                 if (!res.success) {
                     self.toast('Error trashing files', 'error');
@@ -615,7 +615,7 @@
                 $text.text(pct + '% — ' + trashed + ' / ' + totalStart + ' trashed');
 
                 // Update tab counts live
-                $('#omc-unused-count').text('(' + res.data.remaining + ')');
+                $('#olimc-unused-count').text('(' + res.data.remaining + ')');
 
                 if (res.data.done) {
                     $fill.css('width', '100%');
@@ -624,7 +624,7 @@
                     self.currentPage = 1;
                     self.loadResults();
                     setTimeout(function() {
-                        $('#omc-progress-wrap').fadeOut();
+                        $('#olimc-progress-wrap').fadeOut();
                         self.resetTrashAllUI();
                     }, 3000);
                 } else {
@@ -637,15 +637,15 @@
         },
 
         resetTrashAllUI: function() {
-            $('#omc-trash-all-btn').prop('disabled', false).text('Trash All Unused');
+            $('#olimc-trash-all-btn').prop('disabled', false).text('Trash All Unused');
         },
 
         emptyTrash: function() {
             var self = this;
-            var $btn = $('#omc-empty-trash-btn');
-            var $progress = $('#omc-progress-wrap');
-            var $fill = $('#omc-progress-fill');
-            var $text = $('#omc-progress-text');
+            var $btn = $('#olimc-empty-trash-btn');
+            var $progress = $('#olimc-progress-wrap');
+            var $fill = $('#olimc-progress-fill');
+            var $text = $('#olimc-progress-text');
             var totalStart = 0;
 
             $btn.prop('disabled', true).text('Deleting...');
@@ -658,12 +658,12 @@
 
         emptyTrashBatch: function(totalStart) {
             var self = this;
-            var $fill = $('#omc-progress-fill');
-            var $text = $('#omc-progress-text');
+            var $fill = $('#olimc-progress-fill');
+            var $text = $('#olimc-progress-text');
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_empty_trash_batch',
-                nonce: omcObj.nonce
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_empty_trash_batch',
+                nonce: olimcObj.nonce
             }, function(res) {
                 if (!res.success) {
                     self.toast('Error deleting files', 'error');
@@ -678,7 +678,7 @@
                 $text.text(pct + '% — ' + deleted + ' / ' + totalStart + ' permanently deleted');
 
                 // Update trash tab count live
-                $('#omc-trash-count').text('(' + res.data.remaining + ')');
+                $('#olimc-trash-count').text('(' + res.data.remaining + ')');
 
                 if (res.data.done) {
                     $fill.css('width', '100%');
@@ -687,7 +687,7 @@
                     self.currentPage = 1;
                     self.loadResults();
                     setTimeout(function() {
-                        $('#omc-progress-wrap').fadeOut();
+                        $('#olimc-progress-wrap').fadeOut();
                         self.resetEmptyTrashUI();
                     }, 3000);
                 } else {
@@ -700,23 +700,23 @@
         },
 
         resetEmptyTrashUI: function() {
-            $('#omc-empty-trash-btn').prop('disabled', false).text('Empty Trash');
+            $('#olimc-empty-trash-btn').prop('disabled', false).text('Empty Trash');
         },
 
         saveCronSettings: function() {
             var self = this;
-            var enabled = $('#omc-cron-enabled').is(':checked');
-            var frequency = $('#omc-cron-frequency').val();
+            var enabled = $('#olimc-cron-enabled').is(':checked');
+            var frequency = $('#olimc-cron-frequency').val();
 
-            $.post(omcObj.ajaxurl, {
-                action: 'omc_save_cron_settings',
-                nonce: omcObj.nonce,
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_save_cron_settings',
+                nonce: olimcObj.nonce,
                 enabled: enabled ? 1 : 0,
                 frequency: frequency
             }, function(res) {
                 if (res.success) {
                     self.toast(res.data.message, 'success');
-                    $('#omc-next-run').text(res.data.next_run);
+                    $('#olimc-next-run').text(res.data.next_run);
                 } else {
                     self.toast(res.data || 'Error saving settings', 'error');
                 }
@@ -727,22 +727,22 @@
 
         getSelectedIds: function() {
             var ids = [];
-            $('.omc-item-cb:checked').each(function() {
+            $('.olimc-item-cb:checked').each(function() {
                 ids.push(parseInt($(this).val()));
             });
             return ids;
         },
 
         updateSelectedInfo: function() {
-            var count = $('.omc-item-cb:checked').length;
+            var count = $('.olimc-item-cb:checked').length;
             var totalSize = 0;
-            $('.omc-item-cb:checked').each(function() {
+            $('.olimc-item-cb:checked').each(function() {
                 totalSize += parseInt($(this).data('size')) || 0;
             });
             if (count > 0) {
-                $('#omc-selected-info').text(count + ' selected (' + this.formatSize(totalSize) + ')');
+                $('#olimc-selected-info').text(count + ' selected (' + this.formatSize(totalSize) + ')');
             } else {
-                $('#omc-selected-info').text('');
+                $('#olimc-selected-info').text('');
             }
         },
 
@@ -764,7 +764,7 @@
 
         toast: function(message, type) {
             type = type || 'info';
-            var $toast = $('<div class="omc-toast ' + type + '">' + message + '</div>');
+            var $toast = $('<div class="olimc-toast ' + type + '">' + message + '</div>');
             $('body').append($toast);
             setTimeout(function() { $toast.addClass('show'); }, 10);
             setTimeout(function() {
@@ -775,8 +775,8 @@
     };
 
     $(document).ready(function() {
-        if ($('#omc-scan-btn').length) {
-            OMC.init();
+        if ($('#olimc-scan-btn').length) {
+            OLIMC.init();
         }
     });
 

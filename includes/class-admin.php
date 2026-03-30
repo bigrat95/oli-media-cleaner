@@ -1,47 +1,47 @@
 <?php
 defined('ABSPATH') || exit;
 
-class OMC_Admin {
+class OLIMC_Admin {
 
     public static function init() {
         add_action('admin_menu', [__CLASS__, 'add_menu']);
         add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_assets']);
 
         // AJAX handlers
-        add_action('wp_ajax_omc_start_scan', [__CLASS__, 'ajax_start_scan']);
-        add_action('wp_ajax_omc_scan_batch', [__CLASS__, 'ajax_scan_batch']);
-        add_action('wp_ajax_omc_get_results', [__CLASS__, 'ajax_get_results']);
-        add_action('wp_ajax_omc_trash_single', [__CLASS__, 'ajax_trash_single']);
-        add_action('wp_ajax_omc_trash_bulk', [__CLASS__, 'ajax_trash_bulk']);
-        add_action('wp_ajax_omc_trash_all_batch', [__CLASS__, 'ajax_trash_all_batch']);
-        add_action('wp_ajax_omc_delete_single', [__CLASS__, 'ajax_delete_single']);
-        add_action('wp_ajax_omc_delete_bulk', [__CLASS__, 'ajax_delete_bulk']);
-        add_action('wp_ajax_omc_whitelist_single', [__CLASS__, 'ajax_whitelist_single']);
-        add_action('wp_ajax_omc_whitelist_bulk', [__CLASS__, 'ajax_whitelist_bulk']);
-        add_action('wp_ajax_omc_remove_whitelist', [__CLASS__, 'ajax_remove_whitelist']);
-        add_action('wp_ajax_omc_remove_whitelist_bulk', [__CLASS__, 'ajax_remove_whitelist_bulk']);
-        add_action('wp_ajax_omc_restore_single', [__CLASS__, 'ajax_restore_single']);
-        add_action('wp_ajax_omc_restore_bulk', [__CLASS__, 'ajax_restore_bulk']);
-        add_action('wp_ajax_omc_save_cron_settings', [__CLASS__, 'ajax_save_cron_settings']);
-        add_action('wp_ajax_omc_empty_trash_batch', [__CLASS__, 'ajax_empty_trash_batch']);
+        add_action('wp_ajax_olimc_start_scan', [__CLASS__, 'ajax_start_scan']);
+        add_action('wp_ajax_olimc_scan_batch', [__CLASS__, 'ajax_scan_batch']);
+        add_action('wp_ajax_olimc_get_results', [__CLASS__, 'ajax_get_results']);
+        add_action('wp_ajax_olimc_trash_single', [__CLASS__, 'ajax_trash_single']);
+        add_action('wp_ajax_olimc_trash_bulk', [__CLASS__, 'ajax_trash_bulk']);
+        add_action('wp_ajax_olimc_trash_all_batch', [__CLASS__, 'ajax_trash_all_batch']);
+        add_action('wp_ajax_olimc_delete_single', [__CLASS__, 'ajax_delete_single']);
+        add_action('wp_ajax_olimc_delete_bulk', [__CLASS__, 'ajax_delete_bulk']);
+        add_action('wp_ajax_olimc_whitelist_single', [__CLASS__, 'ajax_whitelist_single']);
+        add_action('wp_ajax_olimc_whitelist_bulk', [__CLASS__, 'ajax_whitelist_bulk']);
+        add_action('wp_ajax_olimc_remove_whitelist', [__CLASS__, 'ajax_remove_whitelist']);
+        add_action('wp_ajax_olimc_remove_whitelist_bulk', [__CLASS__, 'ajax_remove_whitelist_bulk']);
+        add_action('wp_ajax_olimc_restore_single', [__CLASS__, 'ajax_restore_single']);
+        add_action('wp_ajax_olimc_restore_bulk', [__CLASS__, 'ajax_restore_bulk']);
+        add_action('wp_ajax_olimc_save_cron_settings', [__CLASS__, 'ajax_save_cron_settings']);
+        add_action('wp_ajax_olimc_empty_trash_batch', [__CLASS__, 'ajax_empty_trash_batch']);
 
         // Cron hook
-        add_action('omc_scheduled_cleanup', [__CLASS__, 'run_scheduled_cleanup']);
+        add_action('olimc_scheduled_cleanup', [__CLASS__, 'run_scheduled_cleanup']);
     }
 
     public static function activate() {
-        update_option('omc_version', OMC_VERSION);
+        update_option('olimc_version', OLIMC_VERSION);
         // Initialize whitelist as empty
-        if (false === get_option('omc_whitelist')) {
-            update_option('omc_whitelist', [], false);
+        if (false === get_option('olimc_whitelist')) {
+            update_option('olimc_whitelist', [], false);
         }
     }
 
     public static function deactivate() {
-        delete_option('omc_scan_results');
-        delete_option('omc_scan_used_ids');
-        delete_option('omc_scan_date');
-        wp_clear_scheduled_hook('omc_scheduled_cleanup');
+        delete_option('olimc_scan_results');
+        delete_option('olimc_scan_used_ids');
+        delete_option('olimc_scan_date');
+        wp_clear_scheduled_hook('olimc_scheduled_cleanup');
     }
 
     public static function add_menu() {
@@ -59,23 +59,23 @@ class OMC_Admin {
         if ($hook !== 'media_page_oli-media-cleaner') return;
 
         wp_enqueue_style(
-            'omc-admin-css',
-            OMC_PLUGIN_URL . 'assets/css/admin.css',
+            'olimc-admin-css',
+            OLIMC_PLUGIN_URL . 'assets/css/admin.css',
             [],
-            OMC_VERSION
+            OLIMC_VERSION
         );
 
         wp_enqueue_script(
-            'omc-admin-js',
-            OMC_PLUGIN_URL . 'assets/js/admin.js',
+            'olimc-admin-js',
+            OLIMC_PLUGIN_URL . 'assets/js/admin.js',
             ['jquery'],
-            OMC_VERSION,
+            OLIMC_VERSION,
             true
         );
 
-        wp_localize_script('omc-admin-js', 'omcObj', [
+        wp_localize_script('olimc-admin-js', 'olimcObj', [
             'ajaxurl' => admin_url('admin-ajax.php'),
-            'nonce'   => wp_create_nonce('omc_nonce'),
+            'nonce'   => wp_create_nonce('olimc_nonce'),
             'strings' => [
                 'scanning'       => __('Scanning...', 'oli-media-cleaner'),
                 'scan_complete'  => __('Scan complete!', 'oli-media-cleaner'),
@@ -95,22 +95,22 @@ class OMC_Admin {
     public static function render_page() {
         if (!current_user_can('manage_options')) return;
 
-        $scan_date = get_option('omc_scan_date', '');
+        $scan_date = get_option('olimc_scan_date', '');
         $tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'unused';
-        $whitelist = get_option('omc_whitelist', []);
+        $whitelist = get_option('olimc_whitelist', []);
         $base_url = admin_url('upload.php?page=oli-media-cleaner');
         ?>
         <div class="wrap">
             <h1><?php esc_html_e('Oli Media Cleaner', 'oli-media-cleaner'); ?></h1>
 
             <div class="postbox" style="margin-top:20px;">
-                <div class="inside" id="omc-stats">
+                <div class="inside" id="olimc-stats">
                     <?php self::render_stats(); ?>
                 </div>
             </div>
 
             <p>
-                <button type="button" id="omc-scan-btn" class="button button-primary">
+                <button type="button" id="olimc-scan-btn" class="button button-primary">
                     <?php esc_html_e('Scan for Unused Media', 'oli-media-cleaner'); ?>
                 </button>
                 <?php if ($scan_date): ?>
@@ -123,50 +123,50 @@ class OMC_Admin {
                 <?php endif; ?>
             </p>
 
-            <div id="omc-progress-wrap" style="display:none;margin-bottom:15px;">
+            <div id="olimc-progress-wrap" style="display:none;margin-bottom:15px;">
                 <div style="background:#e0e0e0;height:20px;border-radius:3px;overflow:hidden;max-width:500px;">
-                    <div id="omc-progress-fill" style="background:#2271b1;height:100%;width:0%;transition:width .3s;"></div>
+                    <div id="olimc-progress-fill" style="background:#2271b1;height:100%;width:0%;transition:width .3s;"></div>
                 </div>
-                <p class="description" id="omc-progress-text">0%</p>
+                <p class="description" id="olimc-progress-text">0%</p>
             </div>
 
             <nav class="nav-tab-wrapper">
                 <a href="<?php echo esc_url($base_url . '&tab=unused'); ?>"
                    class="nav-tab <?php echo $tab === 'unused' ? 'nav-tab-active' : ''; ?>">
                     <?php esc_html_e('Unused', 'oli-media-cleaner'); ?>
-                    <span class="count" id="omc-unused-count">(0)</span>
+                    <span class="count" id="olimc-unused-count">(0)</span>
                 </a>
                 <a href="<?php echo esc_url($base_url . '&tab=whitelist'); ?>"
                    class="nav-tab <?php echo $tab === 'whitelist' ? 'nav-tab-active' : ''; ?>">
                     <?php esc_html_e('Whitelist', 'oli-media-cleaner'); ?>
-                    <span class="count" id="omc-whitelist-count">(<?php echo count($whitelist); ?>)</span>
+                    <span class="count" id="olimc-whitelist-count">(<?php echo count($whitelist); ?>)</span>
                 </a>
                 <a href="<?php echo esc_url($base_url . '&tab=trash'); ?>"
                    class="nav-tab <?php echo $tab === 'trash' ? 'nav-tab-active' : ''; ?>">
                     <?php esc_html_e('Trash', 'oli-media-cleaner'); ?>
-                    <span class="count" id="omc-trash-count">(<?php echo esc_html( wp_count_posts('attachment')->trash ); ?>)</span>
+                    <span class="count" id="olimc-trash-count">(<?php echo esc_html( wp_count_posts('attachment')->trash ); ?>)</span>
                 </a>
             </nav>
 
             <div class="tablenav top">
                 <div class="alignleft actions">
-                    <label><input type="checkbox" id="omc-select-all"> <?php esc_html_e('Select All', 'oli-media-cleaner'); ?></label>
+                    <label><input type="checkbox" id="olimc-select-all"> <?php esc_html_e('Select All', 'oli-media-cleaner'); ?></label>
                     <?php if ($tab === 'unused'): ?>
-                        <button type="button" class="button" id="omc-bulk-trash-btn"><?php esc_html_e('Trash Selected', 'oli-media-cleaner'); ?></button>
-                        <button type="button" class="button" id="omc-bulk-whitelist-btn"><?php esc_html_e('Whitelist Selected', 'oli-media-cleaner'); ?></button>
-                        <button type="button" class="button" id="omc-trash-all-btn" style="color:#b32d2e;"><?php esc_html_e('Trash All Unused', 'oli-media-cleaner'); ?></button>
+                        <button type="button" class="button" id="olimc-bulk-trash-btn"><?php esc_html_e('Trash Selected', 'oli-media-cleaner'); ?></button>
+                        <button type="button" class="button" id="olimc-bulk-whitelist-btn"><?php esc_html_e('Whitelist Selected', 'oli-media-cleaner'); ?></button>
+                        <button type="button" class="button" id="olimc-trash-all-btn" style="color:#b32d2e;"><?php esc_html_e('Trash All Unused', 'oli-media-cleaner'); ?></button>
                     <?php elseif ($tab === 'whitelist'): ?>
-                        <button type="button" class="button" id="omc-bulk-remove-whitelist-btn"><?php esc_html_e('Remove from Whitelist', 'oli-media-cleaner'); ?></button>
+                        <button type="button" class="button" id="olimc-bulk-remove-whitelist-btn"><?php esc_html_e('Remove from Whitelist', 'oli-media-cleaner'); ?></button>
                     <?php elseif ($tab === 'trash'): ?>
-                        <button type="button" class="button" id="omc-bulk-restore-btn"><?php esc_html_e('Restore Selected', 'oli-media-cleaner'); ?></button>
-                        <button type="button" class="button" id="omc-bulk-delete-btn"><?php esc_html_e('Delete Permanently', 'oli-media-cleaner'); ?></button>
-                        <button type="button" class="button" id="omc-empty-trash-btn" style="color:#b32d2e;"><?php esc_html_e('Empty Trash', 'oli-media-cleaner'); ?></button>
+                        <button type="button" class="button" id="olimc-bulk-restore-btn"><?php esc_html_e('Restore Selected', 'oli-media-cleaner'); ?></button>
+                        <button type="button" class="button" id="olimc-bulk-delete-btn"><?php esc_html_e('Delete Permanently', 'oli-media-cleaner'); ?></button>
+                        <button type="button" class="button" id="olimc-empty-trash-btn" style="color:#b32d2e;"><?php esc_html_e('Empty Trash', 'oli-media-cleaner'); ?></button>
                     <?php endif; ?>
-                    <span id="omc-selected-info" class="description" style="margin-left:8px;"></span>
+                    <span id="olimc-selected-info" class="description" style="margin-left:8px;"></span>
                 </div>
                 <div class="alignright">
                     <?php
-                    $scan_results = get_option('omc_scan_results', []);
+                    $scan_results = get_option('olimc_scan_results', []);
                     $found_exts = [];
                     foreach ($scan_results as $item) {
                         $ext = strtolower($item['ext'] ?? '');
@@ -181,7 +181,7 @@ class OMC_Admin {
                         __('Audio', 'oli-media-cleaner')     => ['mp3','wav','ogg','flac','aac'],
                     ];
                     ?>
-                    <select id="omc-filter-type" style="vertical-align:middle;">
+                    <select id="olimc-filter-type" style="vertical-align:middle;">
                         <option value=""><?php esc_html_e('All Types', 'oli-media-cleaner'); ?></option>
                         <?php foreach ($groups as $label => $exts):
                             $group_items = array_intersect_key($found_exts, array_flip($exts));
@@ -204,19 +204,19 @@ class OMC_Admin {
                         </optgroup>
                         <?php endif; ?>
                     </select>
-                    <input type="search" id="omc-search" placeholder="<?php esc_attr_e('Search files...', 'oli-media-cleaner'); ?>" style="vertical-align:middle;">
-                    <button type="button" id="omc-search-btn" class="button"><?php esc_html_e('Search', 'oli-media-cleaner'); ?></button>
+                    <input type="search" id="olimc-search" placeholder="<?php esc_attr_e('Search files...', 'oli-media-cleaner'); ?>" style="vertical-align:middle;">
+                    <button type="button" id="olimc-search-btn" class="button"><?php esc_html_e('Search', 'oli-media-cleaner'); ?></button>
                 </div>
             </div>
 
-            <div id="omc-results">
+            <div id="olimc-results">
                 <?php self::render_results_table($tab); ?>
             </div>
 
             <div class="tablenav bottom">
                 <div class="alignleft actions">
                     <label><?php esc_html_e('Show', 'oli-media-cleaner'); ?>
-                        <select id="omc-per-page" style="vertical-align:middle;">
+                        <select id="olimc-per-page" style="vertical-align:middle;">
                             <option value="20">20</option>
                             <option value="50">50</option>
                             <option value="100">100</option>
@@ -224,7 +224,7 @@ class OMC_Admin {
                         <?php esc_html_e('per page', 'oli-media-cleaner'); ?>
                     </label>
                 </div>
-                <div class="alignright" id="omc-pagination"></div>
+                <div class="alignright" id="olimc-pagination"></div>
                 <br class="clear">
             </div>
 
@@ -232,16 +232,16 @@ class OMC_Admin {
                 <div class="postbox-header"><h2 style="padding:8px 12px;margin:0;"><?php esc_html_e('Scheduled Auto-Cleanup', 'oli-media-cleaner'); ?></h2></div>
                 <div class="inside">
                     <?php
-                    $cron_enabled = get_option('omc_cron_enabled', false);
-                    $cron_frequency = get_option('omc_cron_frequency', 'daily');
-                    $next_run = wp_next_scheduled('omc_scheduled_cleanup');
+                    $cron_enabled = get_option('olimc_cron_enabled', false);
+                    $cron_frequency = get_option('olimc_cron_frequency', 'daily');
+                    $next_run = wp_next_scheduled('olimc_scheduled_cleanup');
                     ?>
                     <table class="form-table">
                         <tr>
                             <th><?php esc_html_e('Enable Auto-Cleanup', 'oli-media-cleaner'); ?></th>
                             <td>
                                 <label>
-                                    <input type="checkbox" id="omc-cron-enabled" <?php checked($cron_enabled); ?>>
+                                    <input type="checkbox" id="olimc-cron-enabled" <?php checked($cron_enabled); ?>>
                                     <?php esc_html_e('Automatically scan and trash unused images on a schedule', 'oli-media-cleaner'); ?>
                                 </label>
                             </td>
@@ -249,7 +249,7 @@ class OMC_Admin {
                         <tr>
                             <th><?php esc_html_e('Frequency', 'oli-media-cleaner'); ?></th>
                             <td>
-                                <select id="omc-cron-frequency">
+                                <select id="olimc-cron-frequency">
                                     <option value="daily" <?php selected($cron_frequency, 'daily'); ?>><?php esc_html_e('Daily', 'oli-media-cleaner'); ?></option>
                                     <option value="twicedaily" <?php selected($cron_frequency, 'twicedaily'); ?>><?php esc_html_e('Twice Daily', 'oli-media-cleaner'); ?></option>
                                     <option value="weekly" <?php selected($cron_frequency, 'weekly'); ?>><?php esc_html_e('Weekly', 'oli-media-cleaner'); ?></option>
@@ -259,14 +259,14 @@ class OMC_Admin {
                         <tr>
                             <th><?php esc_html_e('Next Scheduled Run', 'oli-media-cleaner'); ?></th>
                             <td>
-                                <span id="omc-next-run">
+                                <span id="olimc-next-run">
                                     <?php echo $next_run ? esc_html( date_i18n('M j, Y g:i a', $next_run) ) : esc_html__('Not scheduled', 'oli-media-cleaner'); ?>
                                 </span>
                             </td>
                         </tr>
                     </table>
                     <p>
-                        <button type="button" id="omc-save-cron-btn" class="button button-primary"><?php esc_html_e('Save Settings', 'oli-media-cleaner'); ?></button>
+                        <button type="button" id="olimc-save-cron-btn" class="button button-primary"><?php esc_html_e('Save Settings', 'oli-media-cleaner'); ?></button>
                     </p>
                 </div>
             </div>
@@ -275,11 +275,11 @@ class OMC_Admin {
     }
 
     private static function render_stats() {
-        $scan_results = get_option('omc_scan_results', []);
-        $total = (new OMC_Scanner())->get_total_attachment_count();
+        $scan_results = get_option('olimc_scan_results', []);
+        $total = (new OLIMC_Scanner())->get_total_attachment_count();
         $unused_count = count($scan_results);
         $used_count = $total - $unused_count;
-        $whitelist = get_option('omc_whitelist', []);
+        $whitelist = get_option('olimc_whitelist', []);
 
         $unused_size = 0;
         if (!empty($scan_results)) {
@@ -309,20 +309,20 @@ class OMC_Admin {
     }
 
     private static function render_results_table($tab, $page = 1, $per_page = 20, $search = '', $orderby = 'date', $order = 'desc', $filter_type = '') {
-        $scanner = new OMC_Scanner();
+        $scanner = new OLIMC_Scanner();
         $all_items = [];
         $total_items = 0;
 
         if ($tab === 'unused') {
-            $scan_results = get_option('omc_scan_results', []);
-            $whitelist = get_option('omc_whitelist', []);
+            $scan_results = get_option('olimc_scan_results', []);
+            $whitelist = get_option('olimc_whitelist', []);
             $scan_results = array_filter($scan_results, function($item) use ($whitelist) {
                 return !in_array((int)$item['id'], $whitelist, true);
             });
             $all_items = array_values($scan_results);
 
         } elseif ($tab === 'whitelist') {
-            $whitelist = get_option('omc_whitelist', []);
+            $whitelist = get_option('olimc_whitelist', []);
             foreach ($whitelist as $id) {
                 $info = $scanner->get_attachment_info($id);
                 if ($info) $all_items[] = $info;
@@ -401,12 +401,12 @@ class OMC_Admin {
 
         echo '<table class="widefat striped">';
         echo '<thead><tr>';
-        echo '<th class="check-column"><input type="checkbox" class="omc-select-all-header"></th>';
+        echo '<th class="check-column"><input type="checkbox" class="olimc-select-all-header"></th>';
         echo '<th>' . esc_html__('File', 'oli-media-cleaner') . '</th>';
-        echo '<th class="omc-sortable" data-sort="name" style="cursor:pointer;">' . esc_html__('Name', 'oli-media-cleaner') . wp_kses_post( self::sort_indicator('name', $orderby, $order) ) . '</th>';
-        echo '<th class="omc-sortable" data-sort="size" style="cursor:pointer;">' . esc_html__('Size', 'oli-media-cleaner') . wp_kses_post( self::sort_indicator('size', $orderby, $order) ) . '</th>';
-        echo '<th class="omc-sortable" data-sort="type" style="cursor:pointer;">' . esc_html__('Type', 'oli-media-cleaner') . wp_kses_post( self::sort_indicator('type', $orderby, $order) ) . '</th>';
-        echo '<th class="omc-sortable" data-sort="date" style="cursor:pointer;">' . esc_html__('Date', 'oli-media-cleaner') . wp_kses_post( self::sort_indicator('date', $orderby, $order) ) . '</th>';
+        echo '<th class="olimc-sortable" data-sort="name" style="cursor:pointer;">' . esc_html__('Name', 'oli-media-cleaner') . wp_kses_post( self::sort_indicator('name', $orderby, $order) ) . '</th>';
+        echo '<th class="olimc-sortable" data-sort="size" style="cursor:pointer;">' . esc_html__('Size', 'oli-media-cleaner') . wp_kses_post( self::sort_indicator('size', $orderby, $order) ) . '</th>';
+        echo '<th class="olimc-sortable" data-sort="type" style="cursor:pointer;">' . esc_html__('Type', 'oli-media-cleaner') . wp_kses_post( self::sort_indicator('type', $orderby, $order) ) . '</th>';
+        echo '<th class="olimc-sortable" data-sort="date" style="cursor:pointer;">' . esc_html__('Date', 'oli-media-cleaner') . wp_kses_post( self::sort_indicator('date', $orderby, $order) ) . '</th>';
         echo '<th>' . esc_html__('Actions', 'oli-media-cleaner') . '</th>';
         echo '</tr></thead><tbody>';
 
@@ -418,7 +418,7 @@ class OMC_Admin {
             $edit_url = admin_url("post.php?post={$id}&action=edit");
 
             echo '<tr data-id="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '">';
-            echo '<th class="check-column"><input type="checkbox" class="omc-item-cb" value="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '"></th>';
+            echo '<th class="check-column"><input type="checkbox" class="olimc-item-cb" value="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '"></th>';
             echo '<td>' . wp_kses_post( $thumb ) . '</td>';
             echo '<td><strong>' . esc_html($item['title']) . '</strong><br><span class="description">' . esc_html(wp_basename($item['url'] ?? '')) . '</span></td>';
             echo '<td>' . esc_html($size_formatted) . '</td>';
@@ -429,14 +429,14 @@ class OMC_Admin {
             if ($tab === 'unused') {
                 echo '<a href="' . esc_url($item['url']) . '" target="_blank" class="button button-small">' . esc_html__('View', 'oli-media-cleaner') . '</a> ';
                 echo '<a href="' . esc_url($edit_url) . '" target="_blank" class="button button-small">' . esc_html__('Edit', 'oli-media-cleaner') . '</a> ';
-                echo '<button type="button" class="button button-small omc-whitelist-btn" data-id="' . esc_attr($id) . '">' . esc_html__('Whitelist', 'oli-media-cleaner') . '</button> ';
-                echo '<button type="button" class="button button-small omc-trash-btn" data-id="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '">' . esc_html__('Trash', 'oli-media-cleaner') . '</button>';
+                echo '<button type="button" class="button button-small olimc-whitelist-btn" data-id="' . esc_attr($id) . '">' . esc_html__('Whitelist', 'oli-media-cleaner') . '</button> ';
+                echo '<button type="button" class="button button-small olimc-trash-btn" data-id="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '">' . esc_html__('Trash', 'oli-media-cleaner') . '</button>';
             } elseif ($tab === 'whitelist') {
                 echo '<a href="' . esc_url($item['url']) . '" target="_blank" class="button button-small">' . esc_html__('View', 'oli-media-cleaner') . '</a> ';
-                echo '<button type="button" class="button button-small omc-remove-whitelist-btn" data-id="' . esc_attr($id) . '">' . esc_html__('Remove', 'oli-media-cleaner') . '</button>';
+                echo '<button type="button" class="button button-small olimc-remove-whitelist-btn" data-id="' . esc_attr($id) . '">' . esc_html__('Remove', 'oli-media-cleaner') . '</button>';
             } elseif ($tab === 'trash') {
-                echo '<button type="button" class="button button-small omc-restore-btn" data-id="' . esc_attr($id) . '">' . esc_html__('Restore', 'oli-media-cleaner') . '</button> ';
-                echo '<button type="button" class="button button-small omc-delete-btn" data-id="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '" style="color:#b32d2e;">' . esc_html__('Delete', 'oli-media-cleaner') . '</button>';
+                echo '<button type="button" class="button button-small olimc-restore-btn" data-id="' . esc_attr($id) . '">' . esc_html__('Restore', 'oli-media-cleaner') . '</button> ';
+                echo '<button type="button" class="button button-small olimc-delete-btn" data-id="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '" style="color:#b32d2e;">' . esc_html__('Delete', 'oli-media-cleaner') . '</button>';
             }
 
             echo '</td>';
@@ -445,7 +445,7 @@ class OMC_Admin {
 
         echo '</tbody></table>';
 
-        echo '<div id="omc-pag-data" data-total-pages="' . (int) $total_pages . '" data-current-page="' . (int) $page . '" data-total-items="' . (int) $total_items . '" style="display:none;"></div>';
+        echo '<div id="olimc-pag-data" data-total-pages="' . (int) $total_pages . '" data-current-page="' . (int) $page . '" data-total-items="' . (int) $total_items . '" style="display:none;"></div>';
     }
 
     private static function sort_indicator($col, $orderby, $order) {
@@ -470,7 +470,7 @@ class OMC_Admin {
         if (!current_user_can('manage_options')) {
             wp_send_json_error('Permission denied.');
         }
-        if (!check_ajax_referer('omc_nonce', 'nonce', false)) {
+        if (!check_ajax_referer('olimc_nonce', 'nonce', false)) {
             wp_send_json_error('Invalid nonce.');
         }
     }
@@ -481,14 +481,14 @@ class OMC_Admin {
     public static function ajax_start_scan() {
         self::verify_request();
 
-        $scanner = new OMC_Scanner();
+        $scanner = new OLIMC_Scanner();
         $used_ids = $scanner->collect_used_ids();
         $total = $scanner->get_total_attachment_count();
 
         // Store used IDs for batch processing
-        update_option('omc_scan_used_ids', $used_ids, false);
+        update_option('olimc_scan_used_ids', $used_ids, false);
         // Clear old results
-        delete_option('omc_scan_results');
+        delete_option('olimc_scan_results');
 
         wp_send_json_success([
             'total'    => $total,
@@ -507,9 +507,9 @@ class OMC_Admin {
         $offset = (int) ($_POST['offset'] ?? 0);
         $batch_size = 50;
 
-        $scanner = new OMC_Scanner();
-        $used_ids = get_option('omc_scan_used_ids', []);
-        $whitelist = get_option('omc_whitelist', []);
+        $scanner = new OLIMC_Scanner();
+        $used_ids = get_option('olimc_scan_used_ids', []);
+        $whitelist = get_option('olimc_whitelist', []);
 
         global $wpdb;
         $attachment_ids = $wpdb->get_col($wpdb->prepare(
@@ -533,18 +533,18 @@ class OMC_Admin {
         }
 
         // Append to stored results
-        $existing = get_option('omc_scan_results', []);
+        $existing = get_option('olimc_scan_results', []);
         $existing = array_merge($existing, $unused_batch);
-        update_option('omc_scan_results', $existing, false);
+        update_option('olimc_scan_results', $existing, false);
 
         $processed = $offset + count($attachment_ids);
         $total = $scanner->get_total_attachment_count();
         $done = count($attachment_ids) < $batch_size;
 
         if ($done) {
-            update_option('omc_scan_date', current_time('mysql'), false);
+            update_option('olimc_scan_date', current_time('mysql'), false);
             // Cleanup temp
-            delete_option('omc_scan_used_ids');
+            delete_option('olimc_scan_used_ids');
         }
 
         wp_send_json_success([
@@ -684,10 +684,10 @@ class OMC_Admin {
         $post_id = (int) ($_POST['post_id'] ?? 0);
         if (!$post_id) wp_send_json_error('Invalid ID.');
 
-        $whitelist = get_option('omc_whitelist', []);
+        $whitelist = get_option('olimc_whitelist', []);
         if (!in_array($post_id, $whitelist, true)) {
             $whitelist[] = $post_id;
-            update_option('omc_whitelist', $whitelist, false);
+            update_option('olimc_whitelist', $whitelist, false);
         }
 
         wp_send_json_success(['message' => __('Added to whitelist.', 'oli-media-cleaner')]);
@@ -700,7 +700,7 @@ class OMC_Admin {
         self::verify_request();
 
         $ids = array_map('intval', $_POST['ids'] ?? []);
-        $whitelist = get_option('omc_whitelist', []);
+        $whitelist = get_option('olimc_whitelist', []);
         $added = 0;
 
         foreach ($ids as $id) {
@@ -709,7 +709,7 @@ class OMC_Admin {
                 $added++;
             }
         }
-        update_option('omc_whitelist', $whitelist, false);
+        update_option('olimc_whitelist', $whitelist, false);
 
         wp_send_json_success([
             /* translators: %d: number of items added */
@@ -727,9 +727,9 @@ class OMC_Admin {
         $post_id = (int) ($_POST['post_id'] ?? 0);
         if (!$post_id) wp_send_json_error('Invalid ID.');
 
-        $whitelist = get_option('omc_whitelist', []);
+        $whitelist = get_option('olimc_whitelist', []);
         $whitelist = array_values(array_diff($whitelist, [$post_id]));
-        update_option('omc_whitelist', $whitelist, false);
+        update_option('olimc_whitelist', $whitelist, false);
 
         wp_send_json_success(['message' => __('Removed from whitelist.', 'oli-media-cleaner')]);
     }
@@ -741,9 +741,9 @@ class OMC_Admin {
         self::verify_request();
 
         $ids = array_map('intval', $_POST['ids'] ?? []);
-        $whitelist = get_option('omc_whitelist', []);
+        $whitelist = get_option('olimc_whitelist', []);
         $whitelist = array_values(array_diff($whitelist, $ids));
-        update_option('omc_whitelist', $whitelist, false);
+        update_option('olimc_whitelist', $whitelist, false);
 
         wp_send_json_success([
             /* translators: %d: number of items removed */
@@ -796,8 +796,8 @@ class OMC_Admin {
         self::verify_request();
 
         $batch_size = 50;
-        $scan_results = get_option('omc_scan_results', []);
-        $whitelist = get_option('omc_whitelist', []);
+        $scan_results = get_option('olimc_scan_results', []);
+        $whitelist = get_option('olimc_whitelist', []);
 
         // Filter out whitelisted
         $scan_results = array_filter($scan_results, function($item) use ($whitelist) {
@@ -877,16 +877,16 @@ class OMC_Admin {
             $frequency = 'daily';
         }
 
-        update_option('omc_cron_enabled', $enabled, false);
-        update_option('omc_cron_frequency', $frequency, false);
+        update_option('olimc_cron_enabled', $enabled, false);
+        update_option('olimc_cron_frequency', $frequency, false);
 
         // Clear existing schedule
-        wp_clear_scheduled_hook('omc_scheduled_cleanup');
+        wp_clear_scheduled_hook('olimc_scheduled_cleanup');
 
         $next_run = '';
         if ($enabled) {
-            wp_schedule_event(time() + 60, $frequency, 'omc_scheduled_cleanup');
-            $next_run = date_i18n('M j, Y g:i a', wp_next_scheduled('omc_scheduled_cleanup'));
+            wp_schedule_event(time() + 60, $frequency, 'olimc_scheduled_cleanup');
+            $next_run = date_i18n('M j, Y g:i a', wp_next_scheduled('olimc_scheduled_cleanup'));
         }
 
         wp_send_json_success([
@@ -902,9 +902,9 @@ class OMC_Admin {
      * Cron callback: scan + trash unused images.
      */
     public static function run_scheduled_cleanup() {
-        $scanner = new OMC_Scanner();
+        $scanner = new OLIMC_Scanner();
         $used_ids = $scanner->collect_used_ids();
-        $whitelist = get_option('omc_whitelist', []);
+        $whitelist = get_option('olimc_whitelist', []);
         $total = $scanner->get_total_attachment_count();
 
         global $wpdb;
@@ -940,17 +940,17 @@ class OMC_Admin {
         }
 
         // Update scan results and date
-        update_option('omc_scan_results', [], false);
-        update_option('omc_scan_date', current_time('mysql'), false);
+        update_option('olimc_scan_results', [], false);
+        update_option('olimc_scan_date', current_time('mysql'), false);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────
 
     private static function remove_from_scan_results($post_id) {
-        $results = get_option('omc_scan_results', []);
+        $results = get_option('olimc_scan_results', []);
         $results = array_filter($results, function($item) use ($post_id) {
             return (int) $item['id'] !== (int) $post_id;
         });
-        update_option('omc_scan_results', array_values($results), false);
+        update_option('olimc_scan_results', array_values($results), false);
     }
 }

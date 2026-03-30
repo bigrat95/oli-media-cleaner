@@ -10,13 +10,13 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 }
 
 // Remove all plugin options
-delete_option( 'omc_version' );
-delete_option( 'omc_scan_results' );
-delete_option( 'omc_scan_used_ids' );
-delete_option( 'omc_scan_date' );
-delete_option( 'omc_whitelist' );
-delete_option( 'omc_cron_enabled' );
-delete_option( 'omc_cron_frequency' );
+delete_option( 'olimc_version' );
+delete_option( 'olimc_scan_results' );
+delete_option( 'olimc_scan_used_ids' );
+delete_option( 'olimc_scan_date' );
+delete_option( 'olimc_whitelist' );
+delete_option( 'olimc_cron_enabled' );
+delete_option( 'olimc_cron_frequency' );
 
 // Clear scheduled events
-wp_clear_scheduled_hook( 'omc_scheduled_cleanup' );
+wp_clear_scheduled_hook( 'olimc_scheduled_cleanup' );

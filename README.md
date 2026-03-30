@@ -229,20 +229,20 @@ oli-media-cleaner/
 
 | Class | File | Purpose |
 |-------|------|---------|
-| `OMC_Scanner` | `includes/class-scanner.php` | Collects used attachment IDs from all sources, calculates file sizes, resolves paths to IDs |
-| `OMC_Admin` | `includes/class-admin.php` | Admin menu, page rendering, AJAX handlers, cron scheduling, stats |
+| `OLIMC_Scanner` | `includes/class-scanner.php` | Collects used attachment IDs from all sources, calculates file sizes, resolves paths to IDs |
+| `OLIMC_Admin` | `includes/class-admin.php` | Admin menu, page rendering, AJAX handlers, cron scheduling, stats |
 
 ### WordPress Options Used
 
 | Option | Purpose |
 |--------|---------|
-| `omc_version` | Installed plugin version |
-| `omc_scan_results` | Array of unused attachment data from last scan |
-| `omc_scan_date` | Timestamp of last scan |
-| `omc_whitelist` | Array of whitelisted attachment IDs |
-| `omc_scan_used_ids` | Temporary: used IDs during batch scan |
-| `omc_cron_enabled` | Whether auto-cleanup is enabled |
-| `omc_cron_frequency` | Cron frequency (daily, twicedaily, weekly) |
+| `olimc_version` | Installed plugin version |
+| `olimc_scan_results` | Array of unused attachment data from last scan |
+| `olimc_scan_date` | Timestamp of last scan |
+| `olimc_whitelist` | Array of whitelisted attachment IDs |
+| `olimc_scan_used_ids` | Temporary: used IDs during batch scan |
+| `olimc_cron_enabled` | Whether auto-cleanup is enabled |
+| `olimc_cron_frequency` | Cron frequency (daily, twicedaily, weekly) |
 
 All options are removed on plugin uninstall.
 
@@ -306,7 +306,7 @@ Per-page selector, pagination controls, and the Scheduled Auto-Cleanup settings 
 
 ### 1.5.0
 - Renamed plugin from "Delete Unused Images" to "Oli Media Cleaner"
-- New slug: `oli-media-cleaner`, new prefix: `omc_`
+- New slug: `oli-media-cleaner`, new prefix: `olimc_`
 - Added "Empty Trash" button with batch progress bar
 - Added taxonomy image scanning
 - Live tab count updates during batch operations

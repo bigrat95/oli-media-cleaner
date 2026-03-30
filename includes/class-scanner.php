@@ -1,7 +1,7 @@
 <?php
 defined('ABSPATH') || exit;
 
-class OMC_Scanner {
+class OLIMC_Scanner {
 
     private $used_ids = [];
     private $path_cache = [];

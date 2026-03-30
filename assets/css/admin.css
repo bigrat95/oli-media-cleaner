@@ -1,21 +1,21 @@
 /* Oli Media Cleaner – Minimal admin overrides */
 
 .widefat td img { vertical-align: middle; }
-.widefat tbody tr.omc-loading { opacity: .4; pointer-events: none; }
+.widefat tbody tr.olimc-loading { opacity: .4; pointer-events: none; }
 .tablenav .actions label { margin-right: 6px; }
-#omc-pagination { display: flex; align-items: center; gap: 2px; padding: 8px 0; }
-#omc-pagination .button { min-width: 30px; text-align: center; }
-#omc-pagination .button.active { background: #2271b1; color: #fff; border-color: #2271b1; }
-#omc-pagination .omc-page-info { font-size: 13px; color: #646970; margin: 0 6px; }
+#olimc-pagination { display: flex; align-items: center; gap: 2px; padding: 8px 0; }
+#olimc-pagination .button { min-width: 30px; text-align: center; }
+#olimc-pagination .button.active { background: #2271b1; color: #fff; border-color: #2271b1; }
+#olimc-pagination .olimc-page-info { font-size: 13px; color: #646970; margin: 0 6px; }
 
-.omc-toast {
+.olimc-toast {
     position: fixed; bottom: 30px; right: 30px;
     padding: 10px 18px; border-radius: 4px; color: #fff;
     font-size: 13px; z-index: 99999; opacity: 0;
     transform: translateY(10px); transition: all .3s;
     box-shadow: 0 2px 8px rgba(0,0,0,.15);
 }
-.omc-toast.show { opacity: 1; transform: translateY(0); }
-.omc-toast.success { background: #00a32a; }
-.omc-toast.error { background: #d63638; }
-.omc-toast.info { background: #2271b1; }
+.olimc-toast.show { opacity: 1; transform: translateY(0); }
+.olimc-toast.success { background: #00a32a; }
+.olimc-toast.error { background: #d63638; }
+.olimc-toast.info { background: #2271b1; }
