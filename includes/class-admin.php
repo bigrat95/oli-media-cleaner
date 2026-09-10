@@ -151,17 +151,19 @@ class OLIMC_Admin {
             <div class="tablenav top">
                 <div class="alignleft actions">
                     <label><input type="checkbox" id="olimc-select-all"> <?php esc_html_e('Select All', 'oli-media-cleaner'); ?></label>
-                    <?php if ($tab === 'unused'): ?>
-                        <button type="button" class="button" id="olimc-bulk-trash-btn"><?php esc_html_e('Trash Selected', 'oli-media-cleaner'); ?></button>
-                        <button type="button" class="button" id="olimc-bulk-whitelist-btn"><?php esc_html_e('Whitelist Selected', 'oli-media-cleaner'); ?></button>
-                        <button type="button" class="button" id="olimc-trash-all-btn" style="color:#b32d2e;"><?php esc_html_e('Trash All Unused', 'oli-media-cleaner'); ?></button>
-                    <?php elseif ($tab === 'whitelist'): ?>
-                        <button type="button" class="button" id="olimc-bulk-remove-whitelist-btn"><?php esc_html_e('Remove from Whitelist', 'oli-media-cleaner'); ?></button>
-                    <?php elseif ($tab === 'trash'): ?>
-                        <button type="button" class="button" id="olimc-bulk-restore-btn"><?php esc_html_e('Restore Selected', 'oli-media-cleaner'); ?></button>
-                        <button type="button" class="button" id="olimc-bulk-delete-btn"><?php esc_html_e('Delete Permanently', 'oli-media-cleaner'); ?></button>
-                        <button type="button" class="button" id="olimc-empty-trash-btn" style="color:#b32d2e;"><?php esc_html_e('Empty Trash', 'oli-media-cleaner'); ?></button>
-                    <?php endif; ?>
+                    <?php
+                    // Always output every tab's actions so AJAX tab switches can show/hide them.
+                    $unused_style    = $tab === 'unused' ? '' : 'display:none;';
+                    $whitelist_style = $tab === 'whitelist' ? '' : 'display:none;';
+                    $trash_style     = $tab === 'trash' ? '' : 'display:none;';
+                    ?>
+                    <button type="button" class="button olimc-tab-unused" id="olimc-bulk-trash-btn"<?php echo $unused_style ? ' style="' . esc_attr($unused_style) . '"' : ''; ?>><?php esc_html_e('Trash Selected', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-unused" id="olimc-bulk-whitelist-btn"<?php echo $unused_style ? ' style="' . esc_attr($unused_style) . '"' : ''; ?>><?php esc_html_e('Whitelist Selected', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-unused" id="olimc-trash-all-btn"<?php echo $unused_style ? ' style="' . esc_attr($unused_style) . '"' : ''; ?>><?php esc_html_e('Trash All Unused', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-whitelist" id="olimc-bulk-remove-whitelist-btn"<?php echo $whitelist_style ? ' style="' . esc_attr($whitelist_style) . '"' : ''; ?>><?php esc_html_e('Remove from Whitelist', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-trash" id="olimc-bulk-restore-btn"<?php echo $trash_style ? ' style="' . esc_attr($trash_style) . '"' : ''; ?>><?php esc_html_e('Restore Selected', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-trash" id="olimc-bulk-delete-btn"<?php echo $trash_style ? ' style="' . esc_attr($trash_style) . '"' : ''; ?>><?php esc_html_e('Delete Permanently', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-trash" id="olimc-empty-trash-btn"<?php echo $trash_style ? ' style="' . esc_attr($trash_style) . '"' : ''; ?>><?php esc_html_e('Empty Trash', 'oli-media-cleaner'); ?></button>
                     <span id="olimc-selected-info" class="description" style="margin-left:8px;"></span>
                 </div>
                 <div class="alignright">

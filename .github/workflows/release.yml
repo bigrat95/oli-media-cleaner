@@ -17,7 +17,7 @@ jobs:
 
       - name: Create clean plugin directory
         run: |
-          mkdir -p build/delete-unused-images
+          mkdir -p build/oli-media-cleaner
           rsync -av \
             --exclude='.git' \
             --exclude='.github' \
@@ -26,16 +26,19 @@ jobs:
             --exclude='node_modules' \
             --exclude='.idea' \
             --exclude='.vscode' \
+            --exclude='tests' \
+            --exclude='package.json' \
+            --exclude='package-lock.json' \
             --exclude='*Zone.Identifier' \
-            ./ build/delete-unused-images/
+            ./ build/oli-media-cleaner/
 
       - name: Create ZIP
         run: |
           cd build
-          zip -r ../delete-unused-images.zip delete-unused-images/
+          zip -r ../oli-media-cleaner.zip oli-media-cleaner/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: delete-unused-images.zip
+          files: oli-media-cleaner.zip
           generate_release_notes: true

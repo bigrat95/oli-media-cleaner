@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/bigrat95/oli-media-cleaner/releases"><img src="https://img.shields.io/badge/version-1.5.0-blue" alt="Version"></a>
+  <a href="https://github.com/bigrat95/oli-media-cleaner/releases"><img src="https://img.shields.io/badge/version-1.5.2-blue" alt="Version"></a>
   <a href="https://wordpress.org/"><img src="https://img.shields.io/badge/WordPress-6.9-green" alt="WordPress"></a>
   <a href="https://php.net/"><img src="https://img.shields.io/badge/PHP-7.4%2B-purple" alt="PHP"></a>
   <a href="https://www.gnu.org/licenses/gpl-2.0.html"><img src="https://img.shields.io/badge/license-GPL--2.0--or--later-orange" alt="License"></a>
@@ -304,6 +304,16 @@ Per-page selector, pagination controls, and the Scheduled Auto-Cleanup settings 
 
 ## Changelog
 
+### 1.5.2
+- FIX: Bulk action toolbar now updates immediately when switching tabs
+- Restore Selected, Delete Permanently, and Empty Trash appear on the Trash tab without a page refresh
+- Trash All Unused is hidden when viewing Whitelist or Trash
+
+### 1.5.1
+- FIX: Detect ACF gallery/image/file fields nested inside clone fields (flexible content → clone → gallery)
+- Resolve cloned field groups and individual cloned fields via the ACF API
+- Match clone-prefixed meta keys such as `content_blocks_4_image_carousel_images`
+
 ### 1.5.0
 - Renamed plugin from "Delete Unused Images" to "Oli Media Cleaner"
 - New slug: `oli-media-cleaner`, new prefix: `olimc_`
@@ -351,6 +361,13 @@ Contributions are welcome! Please:
 3. Commit your changes (`git commit -m 'Add my feature'`)
 4. Push to the branch (`git push origin feature/my-feature`)
 5. Open a Pull Request
+
+Toolbar tests do not require WordPress:
+
+```bash
+npm install
+npm test
+```
 
 ---
 

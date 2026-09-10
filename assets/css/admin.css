@@ -3,6 +3,8 @@
 .widefat td img { vertical-align: middle; }
 .widefat tbody tr.olimc-loading { opacity: .4; pointer-events: none; }
 .tablenav .actions label { margin-right: 6px; }
+#olimc-trash-all-btn,
+#olimc-empty-trash-btn { color: #b32d2e; }
 #olimc-pagination { display: flex; align-items: center; gap: 2px; padding: 8px 0; }
 #olimc-pagination .button { min-width: 30px; text-align: center; }
 #olimc-pagination .button.active { background: #2271b1; color: #fff; border-color: #2271b1; }

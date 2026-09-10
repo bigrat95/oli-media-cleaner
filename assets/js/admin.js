@@ -17,6 +17,7 @@
             this.currentTab = params.get('tab') || 'unused';
 
             this.bindEvents();
+            this.updateBulkBar();
             this.loadResults();
         },
 
@@ -46,8 +47,8 @@
                     self.sortOrder = 'desc';
                     $('#olimc-search').val('');
                     $('#olimc-filter-type').val('');
-                    self.loadResults();
                     self.updateBulkBar();
+                    self.loadResults();
                 }
             });
 
@@ -373,11 +374,12 @@
         },
 
         updateBulkBar: function() {
-            // Show/hide relevant bulk buttons based on tab
+            // Show/hide relevant bulk buttons based on tab. All actions are in the DOM
+            // so switching tabs via AJAX can reveal Restore/Delete/Empty Trash immediately.
             var tab = this.currentTab;
-            $('#olimc-bulk-trash-btn, #olimc-bulk-whitelist-btn').toggle(tab === 'unused');
-            $('#olimc-bulk-remove-whitelist-btn').toggle(tab === 'whitelist');
-            $('#olimc-bulk-delete-btn, #olimc-bulk-restore-btn').toggle(tab === 'trash');
+            $('.olimc-tab-unused').toggle(tab === 'unused');
+            $('.olimc-tab-whitelist').toggle(tab === 'whitelist');
+            $('.olimc-tab-trash').toggle(tab === 'trash');
         },
 
         // ─── Actions ────────────────────────────────────────────────

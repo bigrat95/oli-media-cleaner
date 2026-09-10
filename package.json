@@ -1,0 +1,12 @@
+{
+  "name": "oli-media-cleaner",
+  "private": true,
+  "description": "Dev tests for Oli Media Cleaner admin UI",
+  "scripts": {
+    "test": "node tests/toolbar.test.js"
+  },
+  "devDependencies": {
+    "jquery": "^3.7.1",
+    "jsdom": "^26.1.0"
+  }
+}

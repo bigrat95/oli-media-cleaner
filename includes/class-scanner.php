@@ -370,6 +370,10 @@ class OLIMC_Scanner {
             }
         }
 
+        $image_keys   = array_values(array_unique($image_keys));
+        $file_keys    = array_values(array_unique($file_keys));
+        $gallery_keys = array_values(array_unique($gallery_keys));
+
         // 2. Image and File fields (stored as attachment ID in postmeta)
         // Already partially caught by collect_postmeta_images, but let's be explicit
         $image_file_keys = array_merge($image_keys, $file_keys);
@@ -449,13 +453,30 @@ class OLIMC_Scanner {
     }
 
     /**
-     * Recursively collect ACF field keys by type.
+     * Recursively collect ACF field names by type.
+     *
+     * Clone fields do not expose the referenced group's fields as sub_fields, so
+     * we resolve $field['clone'] (group keys and/or field keys) via the ACF API.
+     *
+     * @param array $visited_clones Clone selectors already followed (prevents loops).
      */
-    private function collect_acf_field_keys_recursive($fields, &$image_keys, &$file_keys, &$gallery_keys, &$all_keys) {
-        foreach ($fields as $field) {
-            $all_keys[] = $field['name'];
+    private function collect_acf_field_keys_recursive($fields, &$image_keys, &$file_keys, &$gallery_keys, &$all_keys, &$visited_clones = null) {
+        if ($visited_clones === null) {
+            $visited_clones = [];
+        }
 
-            switch ($field['type']) {
+        foreach ($fields as $field) {
+            if (!is_array($field)) {
+                continue;
+            }
+
+            if (!empty($field['name'])) {
+                $all_keys[] = $field['name'];
+            }
+
+            $type = isset($field['type']) ? $field['type'] : '';
+
+            switch ($type) {
                 case 'image':
                     $image_keys[] = $field['name'];
                     break;
@@ -467,18 +488,67 @@ class OLIMC_Scanner {
                     break;
             }
 
-            // Recurse into sub_fields (repeater, group, clone, flexible_content layouts)
+            // Recurse into sub_fields (repeater, group, flexible_content layouts)
             if (!empty($field['sub_fields'])) {
-                $this->collect_acf_field_keys_recursive($field['sub_fields'], $image_keys, $file_keys, $gallery_keys, $all_keys);
+                $this->collect_acf_field_keys_recursive($field['sub_fields'], $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
             }
             if (!empty($field['layouts'])) {
                 foreach ($field['layouts'] as $layout) {
                     if (!empty($layout['sub_fields'])) {
-                        $this->collect_acf_field_keys_recursive($layout['sub_fields'], $image_keys, $file_keys, $gallery_keys, $all_keys);
+                        $this->collect_acf_field_keys_recursive($layout['sub_fields'], $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
                     }
                 }
             }
+
+            if ($type === 'clone' && !empty($field['clone']) && is_array($field['clone'])) {
+                $this->collect_acf_cloned_fields($field['clone'], $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
+            }
         }
+    }
+
+    /**
+     * Follow ACF clone selectors to the referenced field group or field definitions.
+     *
+     * @param array $clone_selectors Group keys (group_xxx) and/or field keys (field_xxx).
+     */
+    private function collect_acf_cloned_fields($clone_selectors, &$image_keys, &$file_keys, &$gallery_keys, &$all_keys, &$visited_clones) {
+        foreach ($clone_selectors as $clone_selector) {
+            if (!is_string($clone_selector) || $clone_selector === '') {
+                continue;
+            }
+            if (isset($visited_clones[$clone_selector])) {
+                continue;
+            }
+            $visited_clones[$clone_selector] = true;
+
+            $cloned_fields = function_exists('acf_get_fields') ? acf_get_fields($clone_selector) : null;
+            if (!empty($cloned_fields) && is_array($cloned_fields)) {
+                $this->collect_acf_field_keys_recursive($cloned_fields, $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
+                continue;
+            }
+
+            if (!function_exists('acf_get_field')) {
+                continue;
+            }
+            $cloned_field = acf_get_field($clone_selector);
+            if (!empty($cloned_field) && is_array($cloned_field)) {
+                $this->collect_acf_field_keys_recursive([$cloned_field], $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
+            }
+        }
+    }
+
+    /**
+     * Whether a postmeta key is this ACF field, including nested repeater / flex / clone prefixes.
+     *
+     * Matches `images`, `content_blocks_4_images`, and
+     * `content_blocks_4_image_carousel_images` (clone with prefix_name).
+     */
+    private function acf_meta_key_matches_field($meta_key, $field_name) {
+        if ($meta_key === $field_name) {
+            return true;
+        }
+        $suffix = '_' . $field_name;
+        return substr($meta_key, -strlen($suffix)) === $suffix;
     }
 
     /**
@@ -510,7 +580,7 @@ class OLIMC_Scanner {
             // Determine if this sub-field is image/file (numeric ID) or gallery (serialized array)
             $is_gallery = false;
             foreach ($gallery_keys as $gk) {
-                if (preg_match('/_\d+_' . preg_quote($gk, '/') . '$/', $key) || $key === $gk) {
+                if ($this->acf_meta_key_matches_field($key, $gk)) {
                     $is_gallery = true;
                     break;
                 }
@@ -524,6 +594,8 @@ class OLIMC_Scanner {
                             $this->used_ids[] = (int) $item;
                         } elseif (is_array($item) && isset($item['id'])) {
                             $this->used_ids[] = (int) $item['id'];
+                        } elseif (is_array($item) && isset($item['ID'])) {
+                            $this->used_ids[] = (int) $item['ID'];
                         }
                     }
                 }

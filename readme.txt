@@ -4,7 +4,7 @@ Tags: media, cleanup, unused images, media cleaner, disk space
 Requires at least: 5.8
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.5.0
+Stable tag: 1.5.2
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -99,6 +99,16 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 
 == Changelog ==
 
+= 1.5.2 =
+* FIX: Bulk action toolbar now updates immediately when switching tabs
+* Restore Selected, Delete Permanently, and Empty Trash appear on the Trash tab without a page refresh
+* Trash All Unused is hidden when viewing Whitelist or Trash
+
+= 1.5.1 =
+* FIX: Detect ACF gallery/image/file fields nested inside clone fields (e.g. flexible content → clone → gallery)
+* Clone field groups and individual cloned fields are now resolved via the ACF API
+* Nested clone-prefixed meta keys (e.g. content_blocks_4_image_carousel_images) are treated as used
+
 = 1.5.0 =
 * Renamed plugin from "Delete Unused Images" to "Oli Media Cleaner"
 * New slug: oli-media-cleaner, new prefix: olimc_
@@ -145,6 +155,12 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 * Native WordPress admin UI — no external dependencies
 
 == Upgrade Notice ==
+
+= 1.5.2 =
+Fixes bulk action buttons not appearing when switching to the Trash or Whitelist tab.
+
+= 1.5.1 =
+Fixes false unused-media positives for ACF galleries stored inside clone fields.
 
 = 1.5.0 =
 Adds Empty Trash, taxonomy image scanning, and live tab count updates.
