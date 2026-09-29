@@ -4,6 +4,7 @@ defined('ABSPATH') || exit;
 class OLIMC_Admin {
 
     public static function init() {
+        add_action('init', [__CLASS__, 'load_textdomain']);
         add_action('admin_menu', [__CLASS__, 'add_menu']);
         add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_assets']);
 
@@ -29,6 +30,17 @@ class OLIMC_Admin {
         add_action('olimc_scheduled_cleanup', [__CLASS__, 'run_scheduled_cleanup']);
     }
 
+    /**
+     * Load bundled translations as a fallback until WordPress.org language packs ship.
+     */
+    public static function load_textdomain() {
+        load_plugin_textdomain(
+            'oli-media-cleaner',
+            false,
+            dirname(OLIMC_BASENAME) . '/languages'
+        );
+    }
+
     public static function activate() {
         update_option('olimc_version', OLIMC_VERSION);
         // Initialize whitelist as empty
@@ -47,7 +59,7 @@ class OLIMC_Admin {
     public static function add_menu() {
         add_submenu_page(
             'upload.php',
-            __('Oli Media Cleaner', 'oli-media-cleaner'),
+            __('Media Cleaner', 'oli-media-cleaner'),
             __('Media Cleaner', 'oli-media-cleaner'),
             'manage_options',
             'oli-media-cleaner',
@@ -77,15 +89,48 @@ class OLIMC_Admin {
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('olimc_nonce'),
             'strings' => [
-                'scanning'       => __('Scanning...', 'oli-media-cleaner'),
-                'scan_complete'  => __('Scan complete!', 'oli-media-cleaner'),
-                'confirm_trash'  => __('Trash this file?', 'oli-media-cleaner'),
-                'confirm_delete' => __('Permanently delete this file? This cannot be undone.', 'oli-media-cleaner'),
-                'confirm_bulk_trash'  => __('Trash all selected files?', 'oli-media-cleaner'),
-                'confirm_bulk_delete' => __('Permanently delete all selected files? This cannot be undone.', 'oli-media-cleaner'),
-                'no_selection'        => __('No files selected.', 'oli-media-cleaner'),
-                'confirm_trash_all'   => __('Trash ALL unused images? This will process all pages in batches.', 'oli-media-cleaner'),
-                'confirm_empty_trash' => __('Permanently delete ALL trashed files? This cannot be undone.', 'oli-media-cleaner'),
+                'scanning'               => __('Scanning...', 'oli-media-cleaner'),
+                'scan_complete'          => __('Scan complete!', 'oli-media-cleaner'),
+                'confirm_trash'          => __('Trash this file?', 'oli-media-cleaner'),
+                'confirm_delete'         => __('Permanently delete this file? This cannot be undone.', 'oli-media-cleaner'),
+                'confirm_bulk_trash'     => __('Trash all selected files?', 'oli-media-cleaner'),
+                'confirm_bulk_delete'    => __('Permanently delete all selected files? This cannot be undone.', 'oli-media-cleaner'),
+                'no_selection'           => __('No files selected.', 'oli-media-cleaner'),
+                'confirm_trash_all'      => __('Trash ALL unused images? This will process all pages in batches.', 'oli-media-cleaner'),
+                'confirm_empty_trash'    => __('Permanently delete ALL trashed files? This cannot be undone.', 'oli-media-cleaner'),
+                'confirm_remove_whitelist' => __('Remove selected items from whitelist?', 'oli-media-cleaner'),
+                'scan_failed'            => __('Scan failed', 'oli-media-cleaner'),
+                'network_error'          => __('Network error', 'oli-media-cleaner'),
+                'batch_scan_error'       => __('Batch scan error', 'oli-media-cleaner'),
+                'network_error_scan'     => __('Network error during scan', 'oli-media-cleaner'),
+                'rescan'                 => __('Re-Scan', 'oli-media-cleaner'),
+                'scan_button'            => __('Scan for Unused Media', 'oli-media-cleaner'),
+                /* translators: %1$d: progress percent, %2$d: unused file count */
+                'unused_found_progress'  => __('%1$d%% — %2$d unused found', 'oli-media-cleaner'),
+                /* translators: %d: unused file count */
+                'unused_files_count'     => __('%d unused files.', 'oli-media-cleaner'),
+                /* translators: %d: unused file count */
+                'found_unused'           => __('Found %d unused files.', 'oli-media-cleaner'),
+                'trashing'               => __('Trashing...', 'oli-media-cleaner'),
+                'deleting'               => __('Deleting...', 'oli-media-cleaner'),
+                'starting'               => __('Starting...', 'oli-media-cleaner'),
+                'error_trashing'         => __('Error trashing files', 'oli-media-cleaner'),
+                'error_deleting'         => __('Error deleting files', 'oli-media-cleaner'),
+                /* translators: %1$d: progress percent, %2$d: processed count, %3$d: total count */
+                'trashed_progress'       => __('%1$d%% — %2$d / %3$d trashed', 'oli-media-cleaner'),
+                /* translators: %d: number of files */
+                'done_trashed'           => __('Done! %d files moved to trash.', 'oli-media-cleaner'),
+                /* translators: %1$d: progress percent, %2$d: processed count, %3$d: total count */
+                'deleted_progress'       => __('%1$d%% — %2$d / %3$d permanently deleted', 'oli-media-cleaner'),
+                /* translators: %d: number of files */
+                'done_deleted'           => __('Done! %d files permanently deleted.', 'oli-media-cleaner'),
+                'error_saving'           => __('Error saving settings', 'oli-media-cleaner'),
+                /* translators: %1$d: selected count, %2$s: total size */
+                'selected_info'          => __('%1$d selected (%2$s)', 'oli-media-cleaner'),
+                /* translators: %d: number of items */
+                'items_count'            => __('%d items', 'oli-media-cleaner'),
+                'trash_all_unused'       => __('Trash All Unused', 'oli-media-cleaner'),
+                'empty_trash'            => __('Empty Trash', 'oli-media-cleaner'),
             ],
         ]);
     }
@@ -470,10 +515,10 @@ class OLIMC_Admin {
 
     private static function verify_request() {
         if (!current_user_can('manage_options')) {
-            wp_send_json_error('Permission denied.');
+            wp_send_json_error(__('Permission denied.', 'oli-media-cleaner'));
         }
         if (!check_ajax_referer('olimc_nonce', 'nonce', false)) {
-            wp_send_json_error('Invalid nonce.');
+            wp_send_json_error(__('Invalid nonce.', 'oli-media-cleaner'));
         }
     }
 
@@ -606,7 +651,7 @@ class OLIMC_Admin {
         self::verify_request();
 
         $post_id = (int) ($_POST['post_id'] ?? 0);
-        if (!$post_id) wp_send_json_error('Invalid ID.');
+        if (!$post_id) wp_send_json_error(__('Invalid ID.', 'oli-media-cleaner'));
 
         $result = wp_trash_post($post_id);
         if ($result) {
@@ -633,7 +678,8 @@ class OLIMC_Admin {
 
         wp_send_json_success([
             /* translators: %d: number of files trashed */
-            'message' => sprintf(__('%d files moved to trash.', 'oli-media-cleaner'), $trashed),
+            /* translators: %d: number of files */
+            'message' => sprintf(_n('%d file moved to trash.', '%d files moved to trash.', $trashed, 'oli-media-cleaner'), $trashed),
             'count'   => $trashed,
         ]);
     }
@@ -645,7 +691,7 @@ class OLIMC_Admin {
         self::verify_request();
 
         $post_id = (int) ($_POST['post_id'] ?? 0);
-        if (!$post_id) wp_send_json_error('Invalid ID.');
+        if (!$post_id) wp_send_json_error(__('Invalid ID.', 'oli-media-cleaner'));
 
         $result = wp_delete_attachment($post_id, true);
         if ($result) {
@@ -672,7 +718,8 @@ class OLIMC_Admin {
 
         wp_send_json_success([
             /* translators: %d: number of files deleted */
-            'message' => sprintf(__('%d files permanently deleted.', 'oli-media-cleaner'), $deleted),
+            /* translators: %d: number of files */
+            'message' => sprintf(_n('%d file permanently deleted.', '%d files permanently deleted.', $deleted, 'oli-media-cleaner'), $deleted),
             'count'   => $deleted,
         ]);
     }
@@ -684,7 +731,7 @@ class OLIMC_Admin {
         self::verify_request();
 
         $post_id = (int) ($_POST['post_id'] ?? 0);
-        if (!$post_id) wp_send_json_error('Invalid ID.');
+        if (!$post_id) wp_send_json_error(__('Invalid ID.', 'oli-media-cleaner'));
 
         $whitelist = get_option('olimc_whitelist', []);
         if (!in_array($post_id, $whitelist, true)) {
@@ -715,7 +762,8 @@ class OLIMC_Admin {
 
         wp_send_json_success([
             /* translators: %d: number of items added */
-            'message' => sprintf(__('%d items added to whitelist.', 'oli-media-cleaner'), $added),
+            /* translators: %d: number of items */
+            'message' => sprintf(_n('%d item added to whitelist.', '%d items added to whitelist.', $added, 'oli-media-cleaner'), $added),
             'count'   => $added,
         ]);
     }
@@ -727,7 +775,7 @@ class OLIMC_Admin {
         self::verify_request();
 
         $post_id = (int) ($_POST['post_id'] ?? 0);
-        if (!$post_id) wp_send_json_error('Invalid ID.');
+        if (!$post_id) wp_send_json_error(__('Invalid ID.', 'oli-media-cleaner'));
 
         $whitelist = get_option('olimc_whitelist', []);
         $whitelist = array_values(array_diff($whitelist, [$post_id]));
@@ -749,7 +797,8 @@ class OLIMC_Admin {
 
         wp_send_json_success([
             /* translators: %d: number of items removed */
-            'message' => sprintf(__('%d items removed from whitelist.', 'oli-media-cleaner'), count($ids)),
+            /* translators: %d: number of items */
+            'message' => sprintf(_n('%d item removed from whitelist.', '%d items removed from whitelist.', count($ids), 'oli-media-cleaner'), count($ids)),
             'count'   => count($ids),
         ]);
     }
@@ -761,7 +810,7 @@ class OLIMC_Admin {
         self::verify_request();
 
         $post_id = (int) ($_POST['post_id'] ?? 0);
-        if (!$post_id) wp_send_json_error('Invalid ID.');
+        if (!$post_id) wp_send_json_error(__('Invalid ID.', 'oli-media-cleaner'));
 
         $result = wp_untrash_post($post_id);
         if ($result) {
@@ -786,7 +835,8 @@ class OLIMC_Admin {
 
         wp_send_json_success([
             /* translators: %d: number of files restored */
-            'message' => sprintf(__('%d files restored.', 'oli-media-cleaner'), $restored),
+            /* translators: %d: number of files */
+            'message' => sprintf(_n('%d file restored.', '%d files restored.', $restored, 'oli-media-cleaner'), $restored),
             'count'   => $restored,
         ]);
     }
@@ -891,10 +941,17 @@ class OLIMC_Admin {
             $next_run = date_i18n('M j, Y g:i a', wp_next_scheduled('olimc_scheduled_cleanup'));
         }
 
+        $frequency_labels = [
+            'daily'      => __('Daily', 'oli-media-cleaner'),
+            'twicedaily' => __('Twice Daily', 'oli-media-cleaner'),
+            'weekly'     => __('Weekly', 'oli-media-cleaner'),
+        ];
+        $frequency_label = $frequency_labels[$frequency] ?? $frequency;
+
         wp_send_json_success([
             'message'  => $enabled
-                /* translators: %1$s: frequency, %2$s: next run date */
-                ? sprintf(__('Auto-cleanup enabled (%1$s). Next run: %2$s', 'oli-media-cleaner'), $frequency, $next_run)
+                /* translators: %1$s: frequency label, %2$s: next run date */
+                ? sprintf(__('Auto-cleanup enabled (%1$s). Next run: %2$s', 'oli-media-cleaner'), $frequency_label, $next_run)
                 : __('Auto-cleanup disabled.', 'oli-media-cleaner'),
             'next_run' => $next_run ?: __('Not scheduled', 'oli-media-cleaner'),
         ]);

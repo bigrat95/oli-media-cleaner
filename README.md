@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/bigrat95/oli-media-cleaner/releases"><img src="https://img.shields.io/badge/version-1.5.2-blue" alt="Version"></a>
+  <a href="https://github.com/bigrat95/oli-media-cleaner/releases"><img src="https://img.shields.io/badge/version-1.5.3-blue" alt="Version"></a>
   <a href="https://wordpress.org/"><img src="https://img.shields.io/badge/WordPress-6.9-green" alt="WordPress"></a>
   <a href="https://php.net/"><img src="https://img.shields.io/badge/PHP-7.4%2B-purple" alt="PHP"></a>
   <a href="https://www.gnu.org/licenses/gpl-2.0.html"><img src="https://img.shields.io/badge/license-GPL--2.0--or--later-orange" alt="License"></a>
@@ -87,14 +87,14 @@ The plugin checks these sources to determine which media files are "in use":
 1. Download the [latest release](https://github.com/bigrat95/oli-media-cleaner/releases)
 2. Upload the `oli-media-cleaner` folder to `/wp-content/plugins/`
 3. Activate the plugin in **Plugins > Installed Plugins**
-4. Go to **Media > Oli Media Cleaner** in the admin sidebar
+4. Go to **Media > Media Cleaner** in the admin sidebar
 
 ### From WordPress Admin
 
 1. Go to **Plugins > Add New**
 2. Search for **Oli Media Cleaner**
 3. Click **Install Now**, then **Activate**
-4. Go to **Media > Oli Media Cleaner**
+4. Go to **Media > Media Cleaner**
 
 ---
 
@@ -102,7 +102,7 @@ The plugin checks these sources to determine which media files are "in use":
 
 ### Running a Scan
 
-1. Navigate to **Media > Oli Media Cleaner** in your WordPress admin
+1. Navigate to **Media > Media Cleaner** in your WordPress admin
 2. Click the **Scan for Unused Media** button
 3. A progress bar will show real-time scanning progress
 4. Once complete, the results appear in the **Unused** tab
@@ -274,6 +274,10 @@ Yes. All PHP, CSS, and JS files in the active theme (and parent theme) are scann
 
 Yes. Whitelist individual images or bulk select multiple. Whitelisted images are never flagged as unused and are skipped during auto-cleanup.
 
+### Which languages are supported?
+
+The plugin ships with complete translations for every locale listed on [translate.wordpress.org](https://translate.wordpress.org/projects/wp-plugins/oli-media-cleaner/) (except joke locales such as Emoji and Pirate). Unique translations cover major languages including French, German, Spanish, Italian, Portuguese, Dutch, Japanese, Chinese, Korean, Russian, Polish, Arabic, Turkish, Hebrew, Hindi, Indonesian, Vietnamese, Thai, and many more, plus regional variants. Improvements can still be contributed on GlotPress.
+
 ### Does it create custom database tables?
 
 No. The plugin uses WordPress options only. Lightweight and clean.
@@ -303,6 +307,13 @@ Per-page selector, pagination controls, and the Scheduled Auto-Cleanup settings 
 ---
 
 ## Changelog
+
+### 1.5.3
+- Bundled translations for every WordPress.org locale (200+), including French, German, Spanish, Italian, Portuguese, Dutch, Japanese, Chinese, Korean, Russian, Arabic, and many more
+- Regional variants (e.g. Swiss German, Latin American Spanish, Brazilian and European Portuguese)
+- English (Canada) and English (UK) locale support
+- All remaining admin JavaScript strings are now translatable
+- Translation template (`languages/oli-media-cleaner.pot`) for WordPress.org GlotPress
 
 ### 1.5.2
 - FIX: Bulk action toolbar now updates immediately when switching tabs
@@ -368,6 +379,8 @@ Toolbar tests do not require WordPress:
 npm install
 npm test
 ```
+
+To contribute translations, use [GlotPress](https://translate.wordpress.org/projects/wp-plugins/oli-media-cleaner/) or edit the `.po` files in `languages/` and compile them to `.mo`.
 
 ---
 

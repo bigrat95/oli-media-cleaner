@@ -4,7 +4,7 @@ Tags: media, cleanup, unused images, media cleaner, disk space
 Requires at least: 5.8
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.5.2
+Stable tag: 1.5.3
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -42,7 +42,7 @@ Scan and remove unused media files from your WordPress site to free up disk spac
 
 = How to Use =
 
-1. Go to **Oli Media Cleaner** under **Media** in the WordPress admin sidebar
+1. Go to **Media Cleaner** under **Media** in the WordPress admin sidebar
 2. Click **Scan for Unused Media**
 3. Review the results in the **Unused** tab
 4. **Whitelist** any files you want to keep
@@ -53,7 +53,7 @@ Scan and remove unused media files from your WordPress site to free up disk spac
 
 1. Upload the `oli-media-cleaner` folder to `/wp-content/plugins/`
 2. Activate the plugin through the **Plugins** menu in WordPress
-3. Go to **Oli Media Cleaner** under **Media** in the admin sidebar
+3. Go to **Media Cleaner** under **Media** in the admin sidebar
 4. Click **Scan for Unused Media** to start
 
 == Frequently Asked Questions ==
@@ -86,6 +86,10 @@ Those are detected by the theme file scanner. It finds both URL paths and `wp_ge
 
 Yes. You can whitelist individual images or use bulk select to whitelist multiple at once. Whitelisted images are never flagged as unused.
 
+= Which languages are supported? =
+
+The plugin ships with complete translations for every locale listed on [translate.wordpress.org](https://translate.wordpress.org/projects/wp-plugins/oli-media-cleaner/) (except joke locales such as Emoji and Pirate). Unique translations cover major languages including French, German, Spanish, Italian, Portuguese, Dutch, Japanese, Chinese, Korean, Russian, Polish, Arabic, Turkish, Hebrew, Hindi, Indonesian, Vietnamese, Thai, and many more, plus regional variants (Swiss German, Latin American Spanish, Brazilian vs European Portuguese, and others). Improvements can still be contributed on GlotPress.
+
 = Does it create custom database tables? =
 
 No. The plugin uses WordPress options only. Clean and lightweight.
@@ -98,6 +102,13 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 4. Scan sources information panel
 
 == Changelog ==
+
+= 1.5.3 =
+* Bundled translations for every WordPress.org locale (200+), including French, German, Spanish, Italian, Portuguese, Dutch, Japanese, Chinese, Korean, Russian, Arabic, and many more
+* Regional variants (e.g. Swiss German, Latin American Spanish, Brazilian and European Portuguese)
+* English (Canada) and English (UK) locale support
+* All remaining admin JavaScript strings are now translatable
+* Translation template (POT) for WordPress.org GlotPress
 
 = 1.5.2 =
 * FIX: Bulk action toolbar now updates immediately when switching tabs
@@ -155,6 +166,9 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 * Native WordPress admin UI — no external dependencies
 
 == Upgrade Notice ==
+
+= 1.5.3 =
+Adds bundled translations for 200+ WordPress.org locales, English (Canada/UK) support, and a complete translation template for GlotPress.
 
 = 1.5.2 =
 Fixes bulk action buttons not appearing when switching to the Trash or Whitelist tab.

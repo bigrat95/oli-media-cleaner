@@ -114,6 +114,10 @@ async function boot(activeTab) {
             no_selection: 'No files selected.',
             confirm_trash_all: 'Trash ALL unused images?',
             confirm_empty_trash: 'Permanently delete ALL trashed files?',
+            confirm_remove_whitelist: 'Remove selected items from whitelist?',
+            unused_found_progress: '%1$d%% — %2$d unused found',
+            items_count: '%d items',
+            selected_info: '%1$d selected (%2$s)',
         },
     };
 
@@ -176,6 +180,47 @@ async function run() {
         assertVisible(unusedIds, false, 'direct trash / unused actions');
         assertVisible(whitelistIds, false, 'direct trash / whitelist actions');
         assertVisible(trashIds, true, 'direct trash / trash actions');
+    });
+
+    test('formats translatable progress strings with sprintf placeholders', async () => {
+        const { dom } = await boot('unused');
+        const format = (template, ...args) => String(template)
+            .replace(/%(\d+)\$[sd]/g, (_, n) => {
+                const value = args[parseInt(n, 10) - 1];
+                return value === undefined ? '' : value;
+            })
+            .replace(/%[sd]/g, () => {
+                const value = args.shift();
+                return value === undefined ? '' : value;
+            })
+            .replace(/%%/g, '%');
+        const progress = format(dom.window.olimcObj.strings.unused_found_progress, 50, 12);
+        if (progress !== '50% — 12 unused found') {
+            throw new Error(`unexpected progress format: ${progress}`);
+        }
+        const items = format(dom.window.olimcObj.strings.items_count, 177);
+        if (items !== '177 items') {
+            throw new Error(`unexpected items format: ${items}`);
+        }
+    });
+
+    test('admin.js no longer hardcodes English UI copy', () => {
+        const js = fs.readFileSync(path.join(__dirname, '../assets/js/admin.js'), 'utf8');
+        if (!js.includes(".replace(/%%/g, '%')")) {
+            throw new Error('format() must unescape %% so progress percents render correctly');
+        }
+        const hardcoded = [
+            'Network error during scan',
+            'Remove selected items from whitelist?',
+            "text('Re-Scan')",
+            "text('Trash All Unused')",
+            "text('Empty Trash')",
+        ];
+        for (const snippet of hardcoded) {
+            if (js.includes(snippet)) {
+                throw new Error(`admin.js still hardcodes English: ${snippet}`);
+            }
+        }
     });
 
     test('admin page always outputs every bulk action button', () => {
