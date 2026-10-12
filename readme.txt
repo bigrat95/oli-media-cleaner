@@ -5,7 +5,7 @@ Tags: media, cleanup, unused images, media cleaner, disk space
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.5.13
+Stable tag: 1.5.15
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -104,6 +104,12 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 4. Scan sources information panel
 
 == Changelog ==
+
+= 1.5.15 =
+* NEW: CSV export includes a Status column (Unused / Whitelist / Trash) and exports all three categories in one file so you can filter/categorize in a spreadsheet. Search, type filter, and sort still apply.
+
+= 1.5.14 =
+* CHANGE: "Trash All Unused" is always visible on the Unused tab when there are unused items — no selection required
 
 = 1.5.13 =
 * CHANGE: Whitelist and Trash selection actions (Remove from Whitelist, Restore Selected, Delete Selected) only appear when items are selected
@@ -205,6 +211,12 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 * Native WordPress admin UI — no external dependencies
 
 == Upgrade Notice ==
+
+= 1.5.15 =
+CSV export now includes a Status column and covers Unused, Whitelist, and Trash in one file.
+
+= 1.5.14 =
+"Trash All Unused" is now always available on the Unused tab when there are unused items.
 
 = 1.5.13 =
 Clearer bulk actions: selection-only buttons on Whitelist/Trash, Remove All from Whitelist, stronger Empty Trash warning.

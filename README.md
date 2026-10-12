@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/bigrat95/oli-media-cleaner/releases"><img src="https://img.shields.io/badge/version-1.5.13-blue" alt="Version"></a>
+  <a href="https://github.com/bigrat95/oli-media-cleaner/releases"><img src="https://img.shields.io/badge/version-1.5.15-blue" alt="Version"></a>
   <a href="https://wordpress.org/"><img src="https://img.shields.io/badge/WordPress-7.1-green" alt="WordPress"></a>
   <a href="https://php.net/"><img src="https://img.shields.io/badge/PHP-7.4%2B-purple" alt="PHP"></a>
   <a href="https://www.gnu.org/licenses/gpl-2.0.html"><img src="https://img.shields.io/badge/license-GPL--2.0--or--later-orange" alt="License"></a>
@@ -307,6 +307,12 @@ Per-page selector, pagination controls, and the Scheduled Auto-Cleanup settings 
 ---
 
 ## Changelog
+
+### 1.5.15
+- NEW: CSV export adds a Status column (Unused / Whitelist / Trash) and exports all three categories in one file
+
+### 1.5.14
+- CHANGE: "Trash All Unused" always shows on the Unused tab when there are unused items (no selection needed)
 
 ### 1.5.13
 - CHANGE: Whitelist/Trash selection actions only show when items are selected

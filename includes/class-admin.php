@@ -252,10 +252,11 @@ class OLIMC_Admin {
     public static function render_page() {
         if (!current_user_can('manage_options')) return;
 
-        $scan_date = get_option('olimc_scan_date', '');
-        $tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'unused';
-        $whitelist = get_option('olimc_whitelist', []);
-        $base_url = admin_url('upload.php?page=oli-media-cleaner');
+        $scan_date    = get_option( 'olimc_scan_date', '' );
+        $tab          = isset( $_GET['tab'] ) ? sanitize_text_field( $_GET['tab'] ) : 'unused';
+        $whitelist    = get_option( 'olimc_whitelist', [] );
+        $unused_count = count( get_option( 'olimc_scan_results', [] ) );
+        $base_url     = admin_url( 'upload.php?page=oli-media-cleaner' );
         ?>
         <div class="wrap">
             <h1><?php esc_html_e('Oli Media Cleaner', 'oli-media-cleaner'); ?></h1>
@@ -291,7 +292,7 @@ class OLIMC_Admin {
                 <a href="<?php echo esc_url($base_url . '&tab=unused'); ?>"
                    class="nav-tab <?php echo $tab === 'unused' ? 'nav-tab-active' : ''; ?>">
                     <?php esc_html_e('Unused', 'oli-media-cleaner'); ?>
-                    <span class="count" id="olimc-unused-count">(0)</span>
+                    <span class="count" id="olimc-unused-count">(<?php echo esc_html( (string) $unused_count ); ?>)</span>
                 </a>
                 <a href="<?php echo esc_url($base_url . '&tab=whitelist'); ?>"
                    class="nav-tab <?php echo $tab === 'whitelist' ? 'nav-tab-active' : ''; ?>">
@@ -309,14 +310,15 @@ class OLIMC_Admin {
                 <div class="alignleft actions">
                     <?php
                     // Every tab's actions stay in the DOM; JS shows/hides them on tab switch and selection.
-                    $whitelist_count    = count($whitelist);
-                    $trash_count        = (int) wp_count_posts('attachment')->trash;
-                    $show_whitelist_all = ($tab === 'whitelist' && $whitelist_count > 0);
-                    $show_trash_all     = ($tab === 'trash' && $trash_count > 0);
+                    $whitelist_count    = count( $whitelist );
+                    $trash_count        = (int) wp_count_posts( 'attachment' )->trash;
+                    $show_unused_all    = ( $tab === 'unused' && $unused_count > 0 );
+                    $show_whitelist_all = ( $tab === 'whitelist' && $whitelist_count > 0 );
+                    $show_trash_all     = ( $tab === 'trash' && $trash_count > 0 );
                     ?>
                     <button type="button" class="button olimc-tab-unused olimc-needs-selection" id="olimc-bulk-trash-btn" style="display:none;"><?php esc_html_e('Trash Selected', 'oli-media-cleaner'); ?></button>
                     <button type="button" class="button olimc-tab-unused olimc-needs-selection" id="olimc-bulk-whitelist-btn" style="display:none;"><?php esc_html_e('Whitelist Selected', 'oli-media-cleaner'); ?></button>
-                    <button type="button" class="button olimc-tab-unused" id="olimc-trash-all-btn" style="display:none;"><?php esc_html_e('Trash All Unused', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-unused olimc-when-has-items" id="olimc-trash-all-btn"<?php echo $show_unused_all ? '' : ' style="display:none;"'; ?>><?php esc_html_e('Trash All Unused', 'oli-media-cleaner'); ?></button>
                     <button type="button" class="button olimc-tab-whitelist olimc-needs-selection" id="olimc-bulk-remove-whitelist-btn" style="display:none;"><?php esc_html_e('Remove from Whitelist', 'oli-media-cleaner'); ?></button>
                     <button type="button" class="button olimc-tab-whitelist olimc-when-has-items" id="olimc-remove-all-whitelist-btn"<?php echo $show_whitelist_all ? '' : ' style="display:none;"'; ?>><?php esc_html_e('Remove All from Whitelist', 'oli-media-cleaner'); ?></button>
                     <button type="button" class="button olimc-tab-trash olimc-needs-selection" id="olimc-bulk-restore-btn" style="display:none;"><?php esc_html_e('Restore Selected', 'oli-media-cleaner'); ?></button>
@@ -815,9 +817,12 @@ class OLIMC_Admin {
     }
 
     /**
-     * Export the current tab's filtered items as a downloadable CSV file.
-     * Respects the active search, type filter and sort so the export matches
-     * exactly what the user is looking at (all pages, not just the current one).
+     * Export filtered items as a downloadable CSV file.
+     *
+     * Includes a Status column (Unused / Whitelist / Trash). By default exports
+     * all three categories so the file can be filtered/categorized in a spreadsheet.
+     * Pass tab=unused|whitelist|trash to limit to one category. Search, type filter
+     * and sort still apply (all matching rows, not only the current page).
      */
     public static function ajax_export_csv() {
         if (!current_user_can('manage_options')) {
@@ -829,57 +834,112 @@ class OLIMC_Admin {
             wp_die(esc_html__('Invalid nonce.', 'oli-media-cleaner'), '', ['response' => 403]);
         }
 
-        $tab         = isset($_GET['tab']) ? sanitize_text_field(wp_unslash($_GET['tab'])) : 'unused';
+        $tab         = isset($_GET['tab']) ? sanitize_text_field(wp_unslash($_GET['tab'])) : 'all';
         $search      = isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '';
         $orderby     = isset($_GET['orderby']) ? sanitize_text_field(wp_unslash($_GET['orderby'])) : 'date';
         $order       = isset($_GET['order']) ? sanitize_text_field(wp_unslash($_GET['order'])) : 'desc';
         $filter_type = isset($_GET['filter_type']) ? sanitize_text_field(wp_unslash($_GET['filter_type'])) : '';
 
-        if (!in_array($tab, ['unused', 'whitelist', 'trash'], true)) $tab = 'unused';
-        if (!in_array($orderby, ['name', 'size', 'type', 'date'], true)) $orderby = 'date';
-        if (!in_array($order, ['asc', 'desc'], true)) $order = 'desc';
-
-        $items = self::get_filtered_items($tab, $search, $orderby, $order, $filter_type);
-
-        $filename = 'oli-media-cleaner-' . $tab . '-' . gmdate('Y-m-d-His') . '.csv';
-
-        nocache_headers();
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
-
-        $out = fopen('php://output', 'w');
-
-        // UTF-8 BOM so Excel opens accented characters correctly.
-        fwrite($out, "\xEF\xBB\xBF");
-
-        fputcsv($out, [
-            __('ID', 'oli-media-cleaner'),
-            __('Title', 'oli-media-cleaner'),
-            __('Filename', 'oli-media-cleaner'),
-            __('URL', 'oli-media-cleaner'),
-            __('Type', 'oli-media-cleaner'),
-            __('MIME type', 'oli-media-cleaner'),
-            __('Size (bytes)', 'oli-media-cleaner'),
-            __('Size', 'oli-media-cleaner'),
-            __('Date', 'oli-media-cleaner'),
-        ]);
-
-        foreach ($items as $item) {
-            $bytes = (int) ($item['file_size'] ?? 0);
-            fputcsv($out, [
-                $item['id'] ?? '',
-                $item['title'] ?? '',
-                wp_basename($item['url'] ?? ''),
-                $item['url'] ?? '',
-                strtoupper($item['ext'] ?? ''),
-                $item['mime'] ?? '',
-                $bytes,
-                size_format($bytes),
-                $item['date'] ?? '',
-            ]);
+        if (!in_array($tab, ['all', 'unused', 'whitelist', 'trash'], true)) {
+            $tab = 'all';
+        }
+        if (!in_array($orderby, ['name', 'size', 'type', 'date'], true)) {
+            $orderby = 'date';
+        }
+        if (!in_array($order, ['asc', 'desc'], true)) {
+            $order = 'desc';
         }
 
-        fclose($out);
+        $status_labels = [
+            'unused'    => __('Unused', 'oli-media-cleaner'),
+            'whitelist' => __('Whitelist', 'oli-media-cleaner'),
+            'trash'     => __('Trash', 'oli-media-cleaner'),
+        ];
+
+        $tabs_to_export = ( 'all' === $tab ) ? [ 'unused', 'whitelist', 'trash' ] : [ $tab ];
+
+        $rows = [];
+        foreach ( $tabs_to_export as $export_tab ) {
+            // Skip per-tab sort; we re-sort the combined set below.
+            $items = self::get_filtered_items( $export_tab, $search, $orderby, $order, $filter_type );
+            foreach ( $items as $item ) {
+                $item['status'] = $status_labels[ $export_tab ];
+                $rows[]         = $item;
+            }
+        }
+
+        // Re-apply sort across the combined categories.
+        if ( $orderby && count( $rows ) > 1 ) {
+            usort(
+                $rows,
+                static function ( $a, $b ) use ( $orderby, $order ) {
+                    switch ( $orderby ) {
+                        case 'name':
+                            $cmp = strcasecmp( $a['title'] ?? '', $b['title'] ?? '' );
+                            break;
+                        case 'size':
+                            $cmp = ( (int) ( $a['file_size'] ?? 0 ) ) - ( (int) ( $b['file_size'] ?? 0 ) );
+                            break;
+                        case 'type':
+                            $cmp = strcasecmp( $a['ext'] ?? '', $b['ext'] ?? '' );
+                            break;
+                        case 'date':
+                        default:
+                            $cmp = strcmp( $a['date'] ?? '', $b['date'] ?? '' );
+                            break;
+                    }
+                    return ( 'asc' === $order ) ? $cmp : -$cmp;
+                }
+            );
+        }
+
+        $filename = 'oli-media-cleaner-' . $tab . '-' . gmdate( 'Y-m-d-His' ) . '.csv';
+
+        nocache_headers();
+        header( 'Content-Type: text/csv; charset=utf-8' );
+        header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+
+        $out = fopen( 'php://output', 'w' );
+
+        // UTF-8 BOM so Excel opens accented characters correctly.
+        fwrite( $out, "\xEF\xBB\xBF" );
+
+        fputcsv(
+            $out,
+            [
+                __( 'ID', 'oli-media-cleaner' ),
+                __( 'Status', 'oli-media-cleaner' ),
+                __( 'Title', 'oli-media-cleaner' ),
+                __( 'Filename', 'oli-media-cleaner' ),
+                __( 'URL', 'oli-media-cleaner' ),
+                __( 'Type', 'oli-media-cleaner' ),
+                __( 'MIME type', 'oli-media-cleaner' ),
+                __( 'Size (bytes)', 'oli-media-cleaner' ),
+                __( 'Size', 'oli-media-cleaner' ),
+                __( 'Date', 'oli-media-cleaner' ),
+            ]
+        );
+
+        foreach ( $rows as $item ) {
+            $bytes = (int) ( $item['file_size'] ?? 0 );
+            fputcsv(
+                $out,
+                [
+                    $item['id'] ?? '',
+                    $item['status'] ?? '',
+                    $item['title'] ?? '',
+                    wp_basename( $item['url'] ?? '' ),
+                    $item['url'] ?? '',
+                    strtoupper( $item['ext'] ?? '' ),
+                    $item['mime'] ?? '',
+                    $bytes,
+                    size_format( $bytes ),
+                    $item['date'] ?? '',
+                ]
+            );
+        }
+
+        fclose( $out );
         exit;
     }
 

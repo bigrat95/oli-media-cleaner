@@ -349,11 +349,12 @@
         },
 
         exportCsv: function() {
-            // Download reflects the current tab + active filters/sort (all pages).
+            // One CSV for all categories, with a Status column (Unused / Whitelist / Trash).
+            // Active search, type filter and sort still apply across every category.
             var params = $.param({
                 action: 'olimc_export_csv',
                 nonce: olimcObj.nonce,
-                tab: this.currentTab,
+                tab: 'all',
                 search: this.searchTerm,
                 orderby: this.sortBy,
                 order: this.sortOrder,
@@ -477,16 +478,13 @@
                 }
             });
 
-            // Always-on when the tab has items (Remove All / Restore All / Empty Trash).
+            // Always-on when the tab has items (Trash All / Remove All / Restore All / Empty Trash).
             $('.olimc-when-has-items').each(function() {
                 var $btn = $(this);
                 if ($btn.hasClass('olimc-tab-' + tab) && hasItems) {
                     $btn.show();
                 }
             });
-
-            // "Trash All Unused" only when more than one item is selected on Unused.
-            $('#olimc-trash-all-btn').toggle(tab === 'unused' && selected > 1);
         },
 
         // ─── Actions ────────────────────────────────────────────────
