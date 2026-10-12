@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/bigrat95/oli-media-cleaner/releases"><img src="https://img.shields.io/badge/version-1.5.3-blue" alt="Version"></a>
-  <a href="https://wordpress.org/"><img src="https://img.shields.io/badge/WordPress-6.9-green" alt="WordPress"></a>
+  <a href="https://github.com/bigrat95/oli-media-cleaner/releases"><img src="https://img.shields.io/badge/version-1.5.12-blue" alt="Version"></a>
+  <a href="https://wordpress.org/"><img src="https://img.shields.io/badge/WordPress-7.1-green" alt="WordPress"></a>
   <a href="https://php.net/"><img src="https://img.shields.io/badge/PHP-7.4%2B-purple" alt="PHP"></a>
   <a href="https://www.gnu.org/licenses/gpl-2.0.html"><img src="https://img.shields.io/badge/license-GPL--2.0--or--later-orange" alt="License"></a>
 </p>
@@ -307,6 +307,37 @@ Per-page selector, pagination controls, and the Scheduled Auto-Cleanup settings 
 ---
 
 ## Changelog
+
+### 1.5.12
+- NEW: Settings and Donate links on the Plugins screen
+- NEW: Dismissible support notice on the Media Cleaner screen + footer donation link
+- NEW: Donate link on the WordPress.org plugin page (PayPal)
+
+### 1.5.11
+- CHANGE: "Per page" (20/50/100) selection is remembered across reloads and tab navigation so pagination stays consistent
+
+### 1.5.10
+- CHANGE: Removed the duplicate toolbar "Select All" checkbox; the table header checkbox handles select all
+
+### 1.5.9
+- NEW: "Export CSV" button exports the current filtered list (tab + search + type filter + sort, all pages) for spreadsheet analysis
+
+### 1.5.8
+- CHANGE: "Trash Selected" and "Whitelist Selected" (Unused tab) appear only when at least one item is selected
+
+### 1.5.7
+- NEW: "Restore All" button on the Trash tab batch-restores every trashed file (progress bar), no selection needed
+
+### 1.5.6
+- CHANGE: "Trash All Unused" button only appears when more than one item is selected
+
+### 1.5.5
+- FIX: File type filter now populates immediately after a scan (no page refresh needed) and stays in sync via AJAX
+- NEW: Scan button spinner and animated "Analyzing your site…" progress bar give immediate feedback during the initial analysis step
+
+### 1.5.4
+- Confirmed compatibility with WordPress 7.1
+- Bumped "Tested up to" to 7.1 to clear the "untested with your version of WordPress" warning
 
 ### 1.5.3
 - Bundled translations for every WordPress.org locale (200+), including French, German, Spanish, Italian, Portuguese, Dutch, Japanese, Chinese, Korean, Russian, Arabic, and many more

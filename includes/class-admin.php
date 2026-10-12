@@ -7,11 +7,16 @@ class OLIMC_Admin {
         add_action('init', [__CLASS__, 'load_textdomain']);
         add_action('admin_menu', [__CLASS__, 'add_menu']);
         add_action('admin_enqueue_scripts', [__CLASS__, 'enqueue_assets']);
+        add_filter('plugin_action_links_' . OLIMC_BASENAME, [__CLASS__, 'plugin_action_links']);
+        add_filter('plugin_row_meta', [__CLASS__, 'plugin_row_meta'], 10, 2);
+        add_action('admin_notices', [__CLASS__, 'donate_notice']);
+        add_action('wp_ajax_olimc_dismiss_donate', [__CLASS__, 'ajax_dismiss_donate']);
 
         // AJAX handlers
         add_action('wp_ajax_olimc_start_scan', [__CLASS__, 'ajax_start_scan']);
         add_action('wp_ajax_olimc_scan_batch', [__CLASS__, 'ajax_scan_batch']);
         add_action('wp_ajax_olimc_get_results', [__CLASS__, 'ajax_get_results']);
+        add_action('wp_ajax_olimc_export_csv', [__CLASS__, 'ajax_export_csv']);
         add_action('wp_ajax_olimc_trash_single', [__CLASS__, 'ajax_trash_single']);
         add_action('wp_ajax_olimc_trash_bulk', [__CLASS__, 'ajax_trash_bulk']);
         add_action('wp_ajax_olimc_trash_all_batch', [__CLASS__, 'ajax_trash_all_batch']);
@@ -23,6 +28,7 @@ class OLIMC_Admin {
         add_action('wp_ajax_olimc_remove_whitelist_bulk', [__CLASS__, 'ajax_remove_whitelist_bulk']);
         add_action('wp_ajax_olimc_restore_single', [__CLASS__, 'ajax_restore_single']);
         add_action('wp_ajax_olimc_restore_bulk', [__CLASS__, 'ajax_restore_bulk']);
+        add_action('wp_ajax_olimc_restore_all_batch', [__CLASS__, 'ajax_restore_all_batch']);
         add_action('wp_ajax_olimc_save_cron_settings', [__CLASS__, 'ajax_save_cron_settings']);
         add_action('wp_ajax_olimc_empty_trash_batch', [__CLASS__, 'ajax_empty_trash_batch']);
 
@@ -67,6 +73,100 @@ class OLIMC_Admin {
         );
     }
 
+    /**
+     * Settings + Donate links next to Deactivate on the Plugins screen.
+     *
+     * @param string[] $links Existing action links.
+     * @return string[]
+     */
+    public static function plugin_action_links($links) {
+        $settings = '<a href="' . esc_url(admin_url('upload.php?page=oli-media-cleaner')) . '">' . esc_html__('Settings', 'oli-media-cleaner') . '</a>';
+        $donate   = '<a href="' . esc_url(OLIMC_DONATE_URL) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('Donate', 'oli-media-cleaner') . '</a>';
+        array_unshift($links, $settings, $donate);
+        return $links;
+    }
+
+    /**
+     * Donate link in the plugin meta row (Version | By | View details | Donate).
+     *
+     * @param string[] $links Plugin meta links.
+     * @param string   $file  Plugin basename.
+     * @return string[]
+     */
+    public static function plugin_row_meta($links, $file) {
+        if ($file !== OLIMC_BASENAME) {
+            return $links;
+        }
+        $links[] = '<a href="' . esc_url(OLIMC_DONATE_URL) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('Donate', 'oli-media-cleaner') . '</a>';
+        return $links;
+    }
+
+    /**
+     * Dismissible support notice on the Media Cleaner screen only.
+     */
+    public static function donate_notice() {
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        if (!$screen || $screen->id !== 'media_page_oli-media-cleaner') {
+            return;
+        }
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        if (get_user_meta(get_current_user_id(), 'olimc_donate_dismissed', true)) {
+            return;
+        }
+        ?>
+        <div class="notice notice-info is-dismissible olimc-donate-notice">
+            <p>
+                <?php
+                echo wp_kses(
+                    sprintf(
+                        /* translators: %s: donate URL */
+                        __('Enjoying Oli Media Cleaner? <a href="%s" target="_blank" rel="noopener noreferrer">Buy me a coffee</a> — your support keeps the plugin free and maintained.', 'oli-media-cleaner'),
+                        esc_url(OLIMC_DONATE_URL)
+                    ),
+                    [
+                        'a' => [
+                            'href'   => true,
+                            'target' => true,
+                            'rel'    => true,
+                        ],
+                    ]
+                );
+                ?>
+            </p>
+        </div>
+        <script>
+        (function () {
+            var notice = document.querySelector('.olimc-donate-notice');
+            if (!notice) return;
+            notice.addEventListener('click', function (e) {
+                if (!e.target.classList.contains('notice-dismiss')) return;
+                if (typeof olimcObj === 'undefined') return;
+                var body = new FormData();
+                body.append('action', 'olimc_dismiss_donate');
+                body.append('nonce', olimcObj.nonce);
+                if (window.fetch) {
+                    fetch(olimcObj.ajaxurl, { method: 'POST', body: body, credentials: 'same-origin' });
+                }
+            });
+        })();
+        </script>
+        <?php
+    }
+
+    /**
+     * Persist dismissal of the donate notice for the current user.
+     */
+    public static function ajax_dismiss_donate() {
+        check_ajax_referer('olimc_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(null, 403);
+        }
+        update_user_meta(get_current_user_id(), 'olimc_donate_dismissed', 1);
+        wp_send_json_success();
+    }
+
     public static function enqueue_assets($hook) {
         if ($hook !== 'media_page_oli-media-cleaner') return;
 
@@ -90,6 +190,7 @@ class OLIMC_Admin {
             'nonce'   => wp_create_nonce('olimc_nonce'),
             'strings' => [
                 'scanning'               => __('Scanning...', 'oli-media-cleaner'),
+                'preparing'              => __('Analyzing your site… this can take a moment.', 'oli-media-cleaner'),
                 'scan_complete'          => __('Scan complete!', 'oli-media-cleaner'),
                 'confirm_trash'          => __('Trash this file?', 'oli-media-cleaner'),
                 'confirm_delete'         => __('Permanently delete this file? This cannot be undone.', 'oli-media-cleaner'),
@@ -113,9 +214,17 @@ class OLIMC_Admin {
                 'found_unused'           => __('Found %d unused files.', 'oli-media-cleaner'),
                 'trashing'               => __('Trashing...', 'oli-media-cleaner'),
                 'deleting'               => __('Deleting...', 'oli-media-cleaner'),
+                'restoring'              => __('Restoring...', 'oli-media-cleaner'),
                 'starting'               => __('Starting...', 'oli-media-cleaner'),
                 'error_trashing'         => __('Error trashing files', 'oli-media-cleaner'),
                 'error_deleting'         => __('Error deleting files', 'oli-media-cleaner'),
+                'error_restoring'        => __('Error restoring files', 'oli-media-cleaner'),
+                'confirm_restore_all'    => __('Restore ALL trashed files? This will process all pages in batches.', 'oli-media-cleaner'),
+                'restore_all'            => __('Restore All', 'oli-media-cleaner'),
+                /* translators: %1$d: progress percent, %2$d: processed count, %3$d: total count */
+                'restored_progress'      => __('%1$d%% — %2$d / %3$d restored', 'oli-media-cleaner'),
+                /* translators: %d: number of files */
+                'done_restored'          => __('Done! %d files restored.', 'oli-media-cleaner'),
                 /* translators: %1$d: progress percent, %2$d: processed count, %3$d: total count */
                 'trashed_progress'       => __('%1$d%% — %2$d / %3$d trashed', 'oli-media-cleaner'),
                 /* translators: %d: number of files */
@@ -195,64 +304,32 @@ class OLIMC_Admin {
 
             <div class="tablenav top">
                 <div class="alignleft actions">
-                    <label><input type="checkbox" id="olimc-select-all"> <?php esc_html_e('Select All', 'oli-media-cleaner'); ?></label>
                     <?php
                     // Always output every tab's actions so AJAX tab switches can show/hide them.
                     $unused_style    = $tab === 'unused' ? '' : 'display:none;';
                     $whitelist_style = $tab === 'whitelist' ? '' : 'display:none;';
                     $trash_style     = $tab === 'trash' ? '' : 'display:none;';
                     ?>
-                    <button type="button" class="button olimc-tab-unused" id="olimc-bulk-trash-btn"<?php echo $unused_style ? ' style="' . esc_attr($unused_style) . '"' : ''; ?>><?php esc_html_e('Trash Selected', 'oli-media-cleaner'); ?></button>
-                    <button type="button" class="button olimc-tab-unused" id="olimc-bulk-whitelist-btn"<?php echo $unused_style ? ' style="' . esc_attr($unused_style) . '"' : ''; ?>><?php esc_html_e('Whitelist Selected', 'oli-media-cleaner'); ?></button>
-                    <button type="button" class="button olimc-tab-unused" id="olimc-trash-all-btn"<?php echo $unused_style ? ' style="' . esc_attr($unused_style) . '"' : ''; ?>><?php esc_html_e('Trash All Unused', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-unused olimc-needs-selection" id="olimc-bulk-trash-btn" style="display:none;"><?php esc_html_e('Trash Selected', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-unused olimc-needs-selection" id="olimc-bulk-whitelist-btn" style="display:none;"><?php esc_html_e('Whitelist Selected', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-unused" id="olimc-trash-all-btn" style="display:none;"><?php esc_html_e('Trash All Unused', 'oli-media-cleaner'); ?></button>
                     <button type="button" class="button olimc-tab-whitelist" id="olimc-bulk-remove-whitelist-btn"<?php echo $whitelist_style ? ' style="' . esc_attr($whitelist_style) . '"' : ''; ?>><?php esc_html_e('Remove from Whitelist', 'oli-media-cleaner'); ?></button>
                     <button type="button" class="button olimc-tab-trash" id="olimc-bulk-restore-btn"<?php echo $trash_style ? ' style="' . esc_attr($trash_style) . '"' : ''; ?>><?php esc_html_e('Restore Selected', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-trash" id="olimc-restore-all-btn"<?php echo $trash_style ? ' style="' . esc_attr($trash_style) . '"' : ''; ?>><?php esc_html_e('Restore All', 'oli-media-cleaner'); ?></button>
                     <button type="button" class="button olimc-tab-trash" id="olimc-bulk-delete-btn"<?php echo $trash_style ? ' style="' . esc_attr($trash_style) . '"' : ''; ?>><?php esc_html_e('Delete Permanently', 'oli-media-cleaner'); ?></button>
                     <button type="button" class="button olimc-tab-trash" id="olimc-empty-trash-btn"<?php echo $trash_style ? ' style="' . esc_attr($trash_style) . '"' : ''; ?>><?php esc_html_e('Empty Trash', 'oli-media-cleaner'); ?></button>
                     <span id="olimc-selected-info" class="description" style="margin-left:8px;"></span>
                 </div>
                 <div class="alignright">
-                    <?php
-                    $scan_results = get_option('olimc_scan_results', []);
-                    $found_exts = [];
-                    foreach ($scan_results as $item) {
-                        $ext = strtolower($item['ext'] ?? '');
-                        if ($ext && !isset($found_exts[$ext])) $found_exts[$ext] = strtoupper($ext);
-                    }
-                    ksort($found_exts);
-
-                    $groups = [
-                        __('Images', 'oli-media-cleaner')    => ['jpg','jpeg','png','gif','webp','svg','ico','bmp','tiff','heic'],
-                        __('Documents', 'oli-media-cleaner') => ['pdf','doc','docx','xls','xlsx','csv','ppt','pptx','txt','zip','rar'],
-                        __('Video', 'oli-media-cleaner')     => ['mp4','mov','avi','webm','wmv','mkv'],
-                        __('Audio', 'oli-media-cleaner')     => ['mp3','wav','ogg','flac','aac'],
-                    ];
-                    ?>
                     <select id="olimc-filter-type" style="vertical-align:middle;">
-                        <option value=""><?php esc_html_e('All Types', 'oli-media-cleaner'); ?></option>
-                        <?php foreach ($groups as $label => $exts):
-                            $group_items = array_intersect_key($found_exts, array_flip($exts));
-                            if (empty($group_items)) continue;
-                        ?>
-                        <optgroup label="<?php echo esc_attr($label); ?>">
-                            <?php foreach ($group_items as $ext => $display): ?>
-                            <option value="<?php echo esc_attr($ext); ?>"><?php echo esc_html($display); ?></option>
-                            <?php endforeach; ?>
-                        </optgroup>
-                        <?php endforeach;
-                        // Any extensions not in known groups
-                        $known = array_merge(...array_values($groups));
-                        $other = array_diff_key($found_exts, array_flip($known));
-                        if (!empty($other)): ?>
-                        <optgroup label="<?php esc_attr_e('Other', 'oli-media-cleaner'); ?>">
-                            <?php foreach ($other as $ext => $display): ?>
-                            <option value="<?php echo esc_attr($ext); ?>"><?php echo esc_html($display); ?></option>
-                            <?php endforeach; ?>
-                        </optgroup>
-                        <?php endif; ?>
+                        <?php echo self::render_filter_type_options(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                     </select>
                     <input type="search" id="olimc-search" placeholder="<?php esc_attr_e('Search files...', 'oli-media-cleaner'); ?>" style="vertical-align:middle;">
                     <button type="button" id="olimc-search-btn" class="button"><?php esc_html_e('Search', 'oli-media-cleaner'); ?></button>
+                    <button type="button" id="olimc-export-csv-btn" class="button" style="vertical-align:middle;">
+                        <span class="dashicons dashicons-download" style="vertical-align:text-top;font-size:16px;height:16px;width:16px;"></span>
+                        <?php esc_html_e('Export CSV', 'oli-media-cleaner'); ?>
+                    </button>
                 </div>
             </div>
 
@@ -317,6 +394,25 @@ class OLIMC_Admin {
                     </p>
                 </div>
             </div>
+
+            <p class="description olimc-support-footer" style="margin-top:20px;">
+                <?php
+                echo wp_kses(
+                    sprintf(
+                        /* translators: %s: donate URL */
+                        __('If this plugin helps you, please consider a <a href="%s" target="_blank" rel="noopener noreferrer">donation</a>. Thank you!', 'oli-media-cleaner'),
+                        esc_url(OLIMC_DONATE_URL)
+                    ),
+                    [
+                        'a' => [
+                            'href'   => true,
+                            'target' => true,
+                            'rel'    => true,
+                        ],
+                    ]
+                );
+                ?>
+            </p>
         </div>
         <?php
     }
@@ -355,10 +451,72 @@ class OLIMC_Admin {
         <?php
     }
 
-    private static function render_results_table($tab, $page = 1, $per_page = 20, $search = '', $orderby = 'date', $order = 'desc', $filter_type = '') {
+    /**
+     * Build the <option>/<optgroup> markup for the file-type filter from the
+     * current scan results. Returned (not echoed) so it can be reused both on
+     * initial page render and in the AJAX results refresh, keeping the dropdown
+     * in sync after a scan without a full page reload.
+     *
+     * @param string $selected Currently selected extension to preserve.
+     * @return string Escaped HTML for the select's inner options.
+     */
+    private static function render_filter_type_options($selected = '') {
+        $scan_results = get_option('olimc_scan_results', []);
+        $found_exts = [];
+        foreach ($scan_results as $item) {
+            $ext = strtolower($item['ext'] ?? '');
+            if ($ext && !isset($found_exts[$ext])) $found_exts[$ext] = strtoupper($ext);
+        }
+        ksort($found_exts);
+
+        $groups = [
+            __('Images', 'oli-media-cleaner')    => ['jpg','jpeg','png','gif','webp','svg','ico','bmp','tiff','heic'],
+            __('Documents', 'oli-media-cleaner') => ['pdf','doc','docx','xls','xlsx','csv','ppt','pptx','txt','zip','rar'],
+            __('Video', 'oli-media-cleaner')     => ['mp4','mov','avi','webm','wmv','mkv'],
+            __('Audio', 'oli-media-cleaner')     => ['mp3','wav','ogg','flac','aac'],
+        ];
+
+        $selected = strtolower((string) $selected);
+
+        $render_option = function ($ext, $display) use ($selected) {
+            return '<option value="' . esc_attr($ext) . '"' . selected($selected, $ext, false) . '>' . esc_html($display) . '</option>';
+        };
+
+        $html  = '<option value="">' . esc_html__('All Types', 'oli-media-cleaner') . '</option>';
+
+        foreach ($groups as $label => $exts) {
+            $group_items = array_intersect_key($found_exts, array_flip($exts));
+            if (empty($group_items)) continue;
+            $html .= '<optgroup label="' . esc_attr($label) . '">';
+            foreach ($group_items as $ext => $display) {
+                $html .= $render_option($ext, $display);
+            }
+            $html .= '</optgroup>';
+        }
+
+        // Any extensions not in a known group.
+        $known = array_merge(...array_values($groups));
+        $other = array_diff_key($found_exts, array_flip($known));
+        if (!empty($other)) {
+            $html .= '<optgroup label="' . esc_attr__('Other', 'oli-media-cleaner') . '">';
+            foreach ($other as $ext => $display) {
+                $html .= $render_option($ext, $display);
+            }
+            $html .= '</optgroup>';
+        }
+
+        return $html;
+    }
+
+    /**
+     * Collect, filter and sort the items for a tab. Shared by the table renderer
+     * and the CSV export so both reflect exactly the same filtered dataset.
+     *
+     * @return array List of attachment info arrays.
+     */
+    private static function get_filtered_items($tab, $search = '', $orderby = 'date', $order = 'desc', $filter_type = '') {
         $scanner = new OLIMC_Scanner();
         $all_items = [];
-        $total_items = 0;
 
         if ($tab === 'unused') {
             $scan_results = get_option('olimc_scan_results', []);
@@ -428,6 +586,12 @@ class OLIMC_Admin {
                 return $order === 'asc' ? $cmp : -$cmp;
             });
         }
+
+        return $all_items;
+    }
+
+    private static function render_results_table($tab, $page = 1, $per_page = 20, $search = '', $orderby = 'date', $order = 'desc', $filter_type = '') {
+        $all_items = self::get_filtered_items($tab, $search, $orderby, $order, $filter_type);
 
         $total_items = count($all_items);
         $items = array_slice($all_items, ($page - 1) * $per_page, $per_page);
@@ -635,13 +799,83 @@ class OLIMC_Admin {
         $stats_html = ob_get_clean();
 
         wp_send_json_success([
-            'html'        => $html,
-            'stats'       => $stats_html,
-            'total_pages' => $total_pages,
-            'total_items' => $total_items,
-            'page'        => $page,
-            'trash_count' => (int) wp_count_posts('attachment')->trash,
+            'html'           => $html,
+            'stats'          => $stats_html,
+            'filter_options' => self::render_filter_type_options($filter_type),
+            'total_pages'    => $total_pages,
+            'total_items'    => $total_items,
+            'page'           => $page,
+            'trash_count'    => (int) wp_count_posts('attachment')->trash,
         ]);
+    }
+
+    /**
+     * Export the current tab's filtered items as a downloadable CSV file.
+     * Respects the active search, type filter and sort so the export matches
+     * exactly what the user is looking at (all pages, not just the current one).
+     */
+    public static function ajax_export_csv() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('Permission denied.', 'oli-media-cleaner'), '', ['response' => 403]);
+        }
+
+        $nonce = isset($_GET['nonce']) ? sanitize_text_field(wp_unslash($_GET['nonce'])) : '';
+        if (!wp_verify_nonce($nonce, 'olimc_nonce')) {
+            wp_die(esc_html__('Invalid nonce.', 'oli-media-cleaner'), '', ['response' => 403]);
+        }
+
+        $tab         = isset($_GET['tab']) ? sanitize_text_field(wp_unslash($_GET['tab'])) : 'unused';
+        $search      = isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '';
+        $orderby     = isset($_GET['orderby']) ? sanitize_text_field(wp_unslash($_GET['orderby'])) : 'date';
+        $order       = isset($_GET['order']) ? sanitize_text_field(wp_unslash($_GET['order'])) : 'desc';
+        $filter_type = isset($_GET['filter_type']) ? sanitize_text_field(wp_unslash($_GET['filter_type'])) : '';
+
+        if (!in_array($tab, ['unused', 'whitelist', 'trash'], true)) $tab = 'unused';
+        if (!in_array($orderby, ['name', 'size', 'type', 'date'], true)) $orderby = 'date';
+        if (!in_array($order, ['asc', 'desc'], true)) $order = 'desc';
+
+        $items = self::get_filtered_items($tab, $search, $orderby, $order, $filter_type);
+
+        $filename = 'oli-media-cleaner-' . $tab . '-' . gmdate('Y-m-d-His') . '.csv';
+
+        nocache_headers();
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+
+        $out = fopen('php://output', 'w');
+
+        // UTF-8 BOM so Excel opens accented characters correctly.
+        fwrite($out, "\xEF\xBB\xBF");
+
+        fputcsv($out, [
+            __('ID', 'oli-media-cleaner'),
+            __('Title', 'oli-media-cleaner'),
+            __('Filename', 'oli-media-cleaner'),
+            __('URL', 'oli-media-cleaner'),
+            __('Type', 'oli-media-cleaner'),
+            __('MIME type', 'oli-media-cleaner'),
+            __('Size (bytes)', 'oli-media-cleaner'),
+            __('Size', 'oli-media-cleaner'),
+            __('Date', 'oli-media-cleaner'),
+        ]);
+
+        foreach ($items as $item) {
+            $bytes = (int) ($item['file_size'] ?? 0);
+            fputcsv($out, [
+                $item['id'] ?? '',
+                $item['title'] ?? '',
+                wp_basename($item['url'] ?? ''),
+                $item['url'] ?? '',
+                strtoupper($item['ext'] ?? ''),
+                $item['mime'] ?? '',
+                $bytes,
+                size_format($bytes),
+                $item['date'] ?? '',
+            ]);
+        }
+
+        fclose($out);
+        exit;
     }
 
     /**
@@ -913,6 +1147,47 @@ class OLIMC_Admin {
             'remaining' => $remaining,
             'total'     => $total_trashed,
             'done'      => $remaining <= 0,
+        ]);
+    }
+
+    /**
+     * Restore all trashed attachments in batches (AJAX).
+     */
+    public static function ajax_restore_all_batch() {
+        self::verify_request();
+
+        global $wpdb;
+        $batch_size = 50;
+
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+        $trashed_ids = $wpdb->get_col( $wpdb->prepare(
+            "SELECT ID FROM {$wpdb->posts}
+             WHERE post_type = 'attachment'
+             AND post_status = 'trash'
+             ORDER BY ID ASC
+             LIMIT %d",
+            $batch_size
+        ) );
+
+        $total_trashed = (int) wp_count_posts('attachment')->trash;
+        $restored = 0;
+
+        foreach ($trashed_ids as $id) {
+            if (wp_untrash_post((int) $id)) {
+                $restored++;
+            }
+        }
+
+        $remaining = max(0, $total_trashed - $restored);
+
+        // Guard against an infinite loop if an item refuses to leave the trash.
+        $done = $remaining <= 0 || ($restored === 0 && !empty($trashed_ids));
+
+        wp_send_json_success([
+            'restored'  => $restored,
+            'remaining' => $remaining,
+            'total'     => $total_trashed,
+            'done'      => $done,
         ]);
     }
 

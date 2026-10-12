@@ -15,6 +15,10 @@
             return (olimcObj.strings && olimcObj.strings[key]) || key;
         },
 
+        escapeText: function(text) {
+            return $('<div>').text(text == null ? '' : text).html();
+        },
+
         format: function(template) {
             var args = Array.prototype.slice.call(arguments, 1);
             return String(template).replace(/%(\d+)\$[sd]/g, function(_, n) {
@@ -31,9 +35,21 @@
             var params = new URLSearchParams(window.location.search);
             this.currentTab = params.get('tab') || 'unused';
 
+            this.restorePerPage();
             this.bindEvents();
             this.updateBulkBar();
             this.loadResults();
+        },
+
+        restorePerPage: function() {
+            // Remember the user's "per page" choice across reloads so the list
+            // and pagination keep reflecting it instead of snapping back to 20.
+            var saved;
+            try { saved = parseInt(window.localStorage.getItem('olimcPerPage'), 10); } catch (e) {}
+            if (saved === 20 || saved === 50 || saved === 100) {
+                this.perPage = saved;
+                $('#olimc-per-page').val(String(saved));
+            }
         },
 
         bindEvents: function() {
@@ -67,11 +83,11 @@
                 }
             });
 
-            // Select all checkbox
-            $(document).on('change', '#olimc-select-all, .olimc-select-all-header', function() {
+            // Select all checkbox (table header)
+            $(document).on('change', '.olimc-select-all-header', function() {
                 var checked = $(this).prop('checked');
                 $('.olimc-item-cb').prop('checked', checked);
-                $('#olimc-select-all, .olimc-select-all-header').prop('checked', checked);
+                $('.olimc-select-all-header').prop('checked', checked);
                 self.updateSelectedInfo();
             });
 
@@ -153,6 +169,12 @@
                 self.trashAll();
             });
 
+            // Restore All
+            $('#olimc-restore-all-btn').on('click', function() {
+                if (!confirm(self.str('confirm_restore_all'))) return;
+                self.restoreAll();
+            });
+
             // Empty Trash
             $('#olimc-empty-trash-btn').on('click', function() {
                 if (!confirm(self.str('confirm_empty_trash'))) return;
@@ -179,7 +201,8 @@
 
             // Per page
             $('#olimc-per-page').on('change', function() {
-                self.perPage = parseInt($(this).val());
+                self.perPage = parseInt($(this).val(), 10) || 20;
+                try { window.localStorage.setItem('olimcPerPage', self.perPage); } catch (e) {}
                 self.currentPage = 1;
                 self.loadResults();
             });
@@ -189,6 +212,11 @@
                 self.filterType = $(this).val();
                 self.currentPage = 1;
                 self.loadResults();
+            });
+
+            // Export current (filtered) view to CSV
+            $('#olimc-export-csv-btn').on('click', function() {
+                self.exportCsv();
             });
 
             // Search
@@ -235,10 +263,13 @@
             var $fill = $('#olimc-progress-fill');
             var $text = $('#olimc-progress-text');
 
-            $btn.prop('disabled', true).text(this.str('scanning'));
+            // Immediate feedback: the first step (collecting used IDs) can take
+            // several seconds with no measurable %, so show a spinner + an
+            // indeterminate "working" bar right away instead of a frozen 0%.
+            $btn.prop('disabled', true).html('<span class="olimc-spinner"></span>' + this.str('scanning'));
             $progress.show();
-            $fill.css('width', '0%');
-            $text.text('0%');
+            $fill.css('width', '100%').addClass('olimc-indeterminate');
+            $text.html('<span class="olimc-spinner"></span>' + this.escapeText(this.str('preparing')));
 
             // Step 1: Start scan (collect used IDs)
             $.post(olimcObj.ajaxurl, {
@@ -251,7 +282,8 @@
                     return;
                 }
 
-                $fill.css('width', '5%');
+                // Switch from indeterminate to real progress.
+                $fill.removeClass('olimc-indeterminate').css('width', '5%');
                 $text.text('5%');
 
                 // Step 2: Process batches
@@ -307,7 +339,22 @@
         resetScanUI: function() {
             this.scanning = false;
             $('#olimc-scan-btn').prop('disabled', false).text(this.str('scan_button'));
+            $('#olimc-progress-fill').removeClass('olimc-indeterminate');
             $('#olimc-progress-wrap').hide();
+        },
+
+        exportCsv: function() {
+            // Download reflects the current tab + active filters/sort (all pages).
+            var params = $.param({
+                action: 'olimc_export_csv',
+                nonce: olimcObj.nonce,
+                tab: this.currentTab,
+                search: this.searchTerm,
+                orderby: this.sortBy,
+                order: this.sortOrder,
+                filter_type: this.filterType
+            });
+            window.location.href = olimcObj.ajaxurl + '?' + params;
         },
 
         // ─── Load results via AJAX ──────────────────────────────────
@@ -332,9 +379,16 @@
                 if (res.success) {
                     $results.html(res.data.html).css('opacity', '1');
                     $('#olimc-stats').html(res.data.stats);
+                    if (typeof res.data.filter_options !== 'undefined') {
+                        // Keep the type filter in sync with the latest scan results
+                        // (new extensions appear without a full page reload).
+                        var $filter = $('#olimc-filter-type');
+                        $filter.html(res.data.filter_options);
+                        $filter.val(self.filterType);
+                    }
                     self.buildPagination(res.data.total_pages || 0, res.data.total_items || 0);
                     self.updateTabCounts(res.data.trash_count);
-                    $('#olimc-select-all, .olimc-select-all-header').prop('checked', false);
+                    $('.olimc-select-all-header').prop('checked', false);
                     self.updateSelectedInfo();
                 }
             });
@@ -395,6 +449,22 @@
             $('.olimc-tab-unused').toggle(tab === 'unused');
             $('.olimc-tab-whitelist').toggle(tab === 'whitelist');
             $('.olimc-tab-trash').toggle(tab === 'trash');
+            this.updateActionButtons();
+        },
+
+        updateActionButtons: function() {
+            var tab = this.currentTab;
+            var count = $('.olimc-item-cb:checked').length;
+
+            // Buttons that act on the current selection (e.g. Trash Selected,
+            // Whitelist Selected) only appear once at least one item is selected.
+            $('.olimc-needs-selection').each(function() {
+                var $btn = $(this);
+                $btn.toggle($btn.hasClass('olimc-tab-' + tab) && count >= 1);
+            });
+
+            // "Trash All Unused" is only offered once more than one item is selected.
+            $('#olimc-trash-all-btn').toggle(tab === 'unused' && count > 1);
         },
 
         // ─── Actions ────────────────────────────────────────────────
@@ -657,6 +727,68 @@
             $('#olimc-trash-all-btn').prop('disabled', false).text(this.str('trash_all_unused'));
         },
 
+        restoreAll: function() {
+            var self = this;
+            var $btn = $('#olimc-restore-all-btn');
+            var $progress = $('#olimc-progress-wrap');
+            var $fill = $('#olimc-progress-fill');
+            var $text = $('#olimc-progress-text');
+
+            $btn.prop('disabled', true).text(self.str('restoring'));
+            $progress.show();
+            $fill.removeClass('olimc-indeterminate').css('width', '0%');
+            $text.text(self.str('starting'));
+
+            self.restoreAllBatch(0);
+        },
+
+        restoreAllBatch: function(totalStart) {
+            var self = this;
+            var $fill = $('#olimc-progress-fill');
+            var $text = $('#olimc-progress-text');
+
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_restore_all_batch',
+                nonce: olimcObj.nonce
+            }, function(res) {
+                if (!res.success) {
+                    self.toast(self.str('error_restoring'), 'error');
+                    self.resetRestoreAllUI();
+                    return;
+                }
+
+                if (totalStart === 0) totalStart = res.data.total || 1;
+                var restored = totalStart - res.data.remaining;
+                var pct = Math.min(100, Math.round((restored / totalStart) * 100));
+                $fill.css('width', pct + '%');
+                $text.text(self.format(self.str('restored_progress'), pct, restored, totalStart));
+
+                // Update trash tab count live
+                $('#olimc-trash-count').text('(' + res.data.remaining + ')');
+
+                if (res.data.done) {
+                    $fill.css('width', '100%');
+                    $text.text(self.format(self.str('done_restored'), totalStart));
+                    self.toast(self.format(self.str('done_restored'), totalStart), 'success');
+                    self.currentPage = 1;
+                    self.loadResults();
+                    setTimeout(function() {
+                        $('#olimc-progress-wrap').fadeOut();
+                        self.resetRestoreAllUI();
+                    }, 3000);
+                } else {
+                    self.restoreAllBatch(totalStart);
+                }
+            }).fail(function() {
+                self.toast(self.str('network_error'), 'error');
+                self.resetRestoreAllUI();
+            });
+        },
+
+        resetRestoreAllUI: function() {
+            $('#olimc-restore-all-btn').prop('disabled', false).text(this.str('restore_all'));
+        },
+
         emptyTrash: function() {
             var self = this;
             var $btn = $('#olimc-empty-trash-btn');
@@ -761,6 +893,7 @@
             } else {
                 $('#olimc-selected-info').text('');
             }
+            this.updateActionButtons();
         },
 
         refreshAfterAction: function() {

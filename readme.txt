@@ -1,10 +1,11 @@
 === Oli Media Cleaner ===
 Contributors: bigrat95
+Donate link: https://www.paypal.com/donate/?hosted_button_id=29SAPKFAHMTNW
 Tags: media, cleanup, unused images, media cleaner, disk space
 Requires at least: 5.8
-Tested up to: 6.9
+Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.5.3
+Stable tag: 1.5.12
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +34,7 @@ Scan and remove unused media files from your WordPress site to free up disk spac
 * **Batch scanning** — processes 50 attachments per batch to avoid timeouts
 * **Whitelist** — protect files you want to keep even if unused
 * **Bulk actions** — trash, whitelist, restore, or permanently delete multiple files at once
+* **CSV export** — export the current view (respects search, type filter, and sort) for offline analysis in Excel, Numbers, or Google Sheets
 * **Trash All** — one-click batch trash of all unused images with progress bar (handles thousands)
 * **Scheduled auto-cleanup** — enable daily, twice daily, or weekly automatic scan and trash via WP-Cron
 * **Progress bar** — real-time scanning progress
@@ -103,6 +105,37 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 
 == Changelog ==
 
+= 1.5.12 =
+* NEW: Settings and Donate links on the Plugins screen (Settings opens Media > Media Cleaner)
+* NEW: Optional support notice on the Media Cleaner screen (dismissible per user) and a small footer donation link
+* NEW: Donate link on the WordPress.org plugin page (PayPal)
+
+= 1.5.11 =
+* CHANGE: The "per page" selection (20 / 50 / 100) is now remembered across page reloads and tab navigation, so the list and pagination keep showing your chosen page size instead of resetting to 20
+
+= 1.5.10 =
+* CHANGE: Removed the duplicate "Select All" checkbox from the toolbar — the standard checkbox in the table header column now handles select all
+
+= 1.5.9 =
+* NEW: Export to CSV — an "Export CSV" button exports the current list for analysis in a spreadsheet. The export honors the active tab, search, file-type filter, and sort order, and includes every matching row (not just the current page). Columns: ID, title, filename, URL, type, MIME type, size in bytes, human-readable size, and date
+
+= 1.5.8 =
+* CHANGE: The "Trash Selected" and "Whitelist Selected" buttons on the Unused tab now appear only when at least one item is selected, keeping the toolbar clean until there is something to act on
+
+= 1.5.7 =
+* NEW: "Restore All" button on the Trash tab — batch-restores every trashed file with a progress bar, no need to select items first (mirrors "Empty Trash")
+
+= 1.5.6 =
+* CHANGE: The "Trash All Unused" button now appears only when more than one item is selected, so it stays out of the way until you are working with a batch
+
+= 1.5.5 =
+* FIX: The file type filter is now populated immediately after a scan completes — no page refresh needed. The dropdown stays in sync with the latest scan results via AJAX
+* NEW: Clearer scan feedback — the Scan button shows a spinner and the progress bar animates with an "Analyzing your site…" message during the initial analysis step, so it is obvious the scan is working before the percentage starts counting
+
+= 1.5.4 =
+* Confirmed compatibility with WordPress 7.1
+* Updated "Tested up to" to 7.1 so the plugin no longer shows an "untested with your version of WordPress" warning
+
 = 1.5.3 =
 * Bundled translations for every WordPress.org locale (200+), including French, German, Spanish, Italian, Portuguese, Dutch, Japanese, Chinese, Korean, Russian, Arabic, and many more
 * Regional variants (e.g. Swiss German, Latin American Spanish, Brazilian and European Portuguese)
@@ -166,6 +199,33 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 * Native WordPress admin UI — no external dependencies
 
 == Upgrade Notice ==
+
+= 1.5.12 =
+Adds Settings and Donate links on the Plugins screen, plus an optional support notice in the Media Cleaner UI.
+
+= 1.5.11 =
+Your "per page" choice is now remembered, so pagination stays consistent after reloads instead of resetting to 20.
+
+= 1.5.10 =
+Removes the redundant second "Select All" checkbox; the table header checkbox selects all.
+
+= 1.5.9 =
+Adds a CSV export of the current (filtered) list for offline analysis in a spreadsheet.
+
+= 1.5.8 =
+"Trash Selected" and "Whitelist Selected" now appear only when at least one item is selected.
+
+= 1.5.7 =
+Adds a "Restore All" button to the Trash tab for one-click bulk restore of every trashed file.
+
+= 1.5.6 =
+The "Trash All Unused" button now only shows when more than one item is selected.
+
+= 1.5.5 =
+Fixes the file type filter being empty until a page refresh after scanning, and adds clearer "working" feedback while a scan starts up.
+
+= 1.5.4 =
+Confirms compatibility with WordPress 7.1 and removes the "untested with your version of WordPress" warning.
 
 = 1.5.3 =
 Adds bundled translations for 200+ WordPress.org locales, English (Canada/UK) support, and a complete translation template for GlotPress.
