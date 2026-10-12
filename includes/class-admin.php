@@ -26,6 +26,7 @@ class OLIMC_Admin {
         add_action('wp_ajax_olimc_whitelist_bulk', [__CLASS__, 'ajax_whitelist_bulk']);
         add_action('wp_ajax_olimc_remove_whitelist', [__CLASS__, 'ajax_remove_whitelist']);
         add_action('wp_ajax_olimc_remove_whitelist_bulk', [__CLASS__, 'ajax_remove_whitelist_bulk']);
+        add_action('wp_ajax_olimc_remove_whitelist_all', [__CLASS__, 'ajax_remove_whitelist_all']);
         add_action('wp_ajax_olimc_restore_single', [__CLASS__, 'ajax_restore_single']);
         add_action('wp_ajax_olimc_restore_bulk', [__CLASS__, 'ajax_restore_bulk']);
         add_action('wp_ajax_olimc_restore_all_batch', [__CLASS__, 'ajax_restore_all_batch']);
@@ -195,11 +196,13 @@ class OLIMC_Admin {
                 'confirm_trash'          => __('Trash this file?', 'oli-media-cleaner'),
                 'confirm_delete'         => __('Permanently delete this file? This cannot be undone.', 'oli-media-cleaner'),
                 'confirm_bulk_trash'     => __('Trash all selected files?', 'oli-media-cleaner'),
-                'confirm_bulk_delete'    => __('Permanently delete all selected files? This cannot be undone.', 'oli-media-cleaner'),
+                'confirm_bulk_delete'    => __('Permanently delete the selected files? This cannot be undone. Consider a backup first.', 'oli-media-cleaner'),
                 'no_selection'           => __('No files selected.', 'oli-media-cleaner'),
                 'confirm_trash_all'      => __('Trash ALL unused images? This will process all pages in batches.', 'oli-media-cleaner'),
-                'confirm_empty_trash'    => __('Permanently delete ALL trashed files? This cannot be undone.', 'oli-media-cleaner'),
+                'confirm_empty_trash'    => __('WARNING: This permanently deletes ALL files in the trash. This cannot be undone. Back up your site (or at least wp-content/uploads) before continuing. Empty the trash now?', 'oli-media-cleaner'),
                 'confirm_remove_whitelist' => __('Remove selected items from whitelist?', 'oli-media-cleaner'),
+                'confirm_remove_whitelist_all' => __('Remove ALL items from the whitelist? They will appear again as unused on the next scan.', 'oli-media-cleaner'),
+                'remove_all_whitelist'   => __('Remove All from Whitelist', 'oli-media-cleaner'),
                 'scan_failed'            => __('Scan failed', 'oli-media-cleaner'),
                 'network_error'          => __('Network error', 'oli-media-cleaner'),
                 'batch_scan_error'       => __('Batch scan error', 'oli-media-cleaner'),
@@ -305,19 +308,21 @@ class OLIMC_Admin {
             <div class="tablenav top">
                 <div class="alignleft actions">
                     <?php
-                    // Always output every tab's actions so AJAX tab switches can show/hide them.
-                    $unused_style    = $tab === 'unused' ? '' : 'display:none;';
-                    $whitelist_style = $tab === 'whitelist' ? '' : 'display:none;';
-                    $trash_style     = $tab === 'trash' ? '' : 'display:none;';
+                    // Every tab's actions stay in the DOM; JS shows/hides them on tab switch and selection.
+                    $whitelist_count    = count($whitelist);
+                    $trash_count        = (int) wp_count_posts('attachment')->trash;
+                    $show_whitelist_all = ($tab === 'whitelist' && $whitelist_count > 0);
+                    $show_trash_all     = ($tab === 'trash' && $trash_count > 0);
                     ?>
                     <button type="button" class="button olimc-tab-unused olimc-needs-selection" id="olimc-bulk-trash-btn" style="display:none;"><?php esc_html_e('Trash Selected', 'oli-media-cleaner'); ?></button>
                     <button type="button" class="button olimc-tab-unused olimc-needs-selection" id="olimc-bulk-whitelist-btn" style="display:none;"><?php esc_html_e('Whitelist Selected', 'oli-media-cleaner'); ?></button>
                     <button type="button" class="button olimc-tab-unused" id="olimc-trash-all-btn" style="display:none;"><?php esc_html_e('Trash All Unused', 'oli-media-cleaner'); ?></button>
-                    <button type="button" class="button olimc-tab-whitelist" id="olimc-bulk-remove-whitelist-btn"<?php echo $whitelist_style ? ' style="' . esc_attr($whitelist_style) . '"' : ''; ?>><?php esc_html_e('Remove from Whitelist', 'oli-media-cleaner'); ?></button>
-                    <button type="button" class="button olimc-tab-trash" id="olimc-bulk-restore-btn"<?php echo $trash_style ? ' style="' . esc_attr($trash_style) . '"' : ''; ?>><?php esc_html_e('Restore Selected', 'oli-media-cleaner'); ?></button>
-                    <button type="button" class="button olimc-tab-trash" id="olimc-restore-all-btn"<?php echo $trash_style ? ' style="' . esc_attr($trash_style) . '"' : ''; ?>><?php esc_html_e('Restore All', 'oli-media-cleaner'); ?></button>
-                    <button type="button" class="button olimc-tab-trash" id="olimc-bulk-delete-btn"<?php echo $trash_style ? ' style="' . esc_attr($trash_style) . '"' : ''; ?>><?php esc_html_e('Delete Permanently', 'oli-media-cleaner'); ?></button>
-                    <button type="button" class="button olimc-tab-trash" id="olimc-empty-trash-btn"<?php echo $trash_style ? ' style="' . esc_attr($trash_style) . '"' : ''; ?>><?php esc_html_e('Empty Trash', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-whitelist olimc-needs-selection" id="olimc-bulk-remove-whitelist-btn" style="display:none;"><?php esc_html_e('Remove from Whitelist', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-whitelist olimc-when-has-items" id="olimc-remove-all-whitelist-btn"<?php echo $show_whitelist_all ? '' : ' style="display:none;"'; ?>><?php esc_html_e('Remove All from Whitelist', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-trash olimc-needs-selection" id="olimc-bulk-restore-btn" style="display:none;"><?php esc_html_e('Restore Selected', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-trash olimc-needs-selection" id="olimc-bulk-delete-btn" style="display:none;"><?php esc_html_e('Delete Selected', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-trash olimc-when-has-items" id="olimc-restore-all-btn"<?php echo $show_trash_all ? '' : ' style="display:none;"'; ?>><?php esc_html_e('Restore All', 'oli-media-cleaner'); ?></button>
+                    <button type="button" class="button olimc-tab-trash olimc-when-has-items" id="olimc-empty-trash-btn"<?php echo $show_trash_all ? '' : ' style="display:none;"'; ?>><?php esc_html_e('Empty Trash', 'oli-media-cleaner'); ?></button>
                     <span id="olimc-selected-info" class="description" style="margin-left:8px;"></span>
                 </div>
                 <div class="alignright">
@@ -1034,6 +1039,23 @@ class OLIMC_Admin {
             /* translators: %d: number of items */
             'message' => sprintf(_n('%d item removed from whitelist.', '%d items removed from whitelist.', count($ids), 'oli-media-cleaner'), count($ids)),
             'count'   => count($ids),
+        ]);
+    }
+
+    /**
+     * Remove every item from the whitelist.
+     */
+    public static function ajax_remove_whitelist_all() {
+        self::verify_request();
+
+        $whitelist = get_option('olimc_whitelist', []);
+        $count     = is_array($whitelist) ? count($whitelist) : 0;
+        update_option('olimc_whitelist', [], false);
+
+        wp_send_json_success([
+            /* translators: %d: number of items removed */
+            'message' => sprintf(_n('%d item removed from whitelist.', '%d items removed from whitelist.', $count, 'oli-media-cleaner'), $count),
+            'count'   => $count,
         ]);
     }
 

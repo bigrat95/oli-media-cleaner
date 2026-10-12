@@ -5,7 +5,7 @@ Tags: media, cleanup, unused images, media cleaner, disk space
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.5.12
+Stable tag: 1.5.13
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -105,6 +105,12 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 
 == Changelog ==
 
+= 1.5.13 =
+* CHANGE: Whitelist and Trash selection actions (Remove from Whitelist, Restore Selected, Delete Selected) only appear when items are selected
+* NEW: "Remove All from Whitelist" always visible when the Whitelist tab has items
+* CHANGE: "Restore All" and "Empty Trash" always visible when the Trash tab has items; "Delete Permanently" renamed to "Delete Selected"
+* CHANGE: Empty Trash confirmation now warns that the action is irreversible and recommends a backup first
+
 = 1.5.12 =
 * NEW: Settings and Donate links on the Plugins screen (Settings opens Media > Media Cleaner)
 * NEW: Optional support notice on the Media Cleaner screen (dismissible per user) and a small footer donation link
@@ -199,6 +205,9 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 * Native WordPress admin UI — no external dependencies
 
 == Upgrade Notice ==
+
+= 1.5.13 =
+Clearer bulk actions: selection-only buttons on Whitelist/Trash, Remove All from Whitelist, stronger Empty Trash warning.
 
 = 1.5.12 =
 Adds Settings and Donate links on the Plugins screen, plus an optional support notice in the Media Cleaner UI.

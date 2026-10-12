@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/bigrat95/oli-media-cleaner/releases"><img src="https://img.shields.io/badge/version-1.5.12-blue" alt="Version"></a>
+  <a href="https://github.com/bigrat95/oli-media-cleaner/releases"><img src="https://img.shields.io/badge/version-1.5.13-blue" alt="Version"></a>
   <a href="https://wordpress.org/"><img src="https://img.shields.io/badge/WordPress-7.1-green" alt="WordPress"></a>
   <a href="https://php.net/"><img src="https://img.shields.io/badge/PHP-7.4%2B-purple" alt="PHP"></a>
   <a href="https://www.gnu.org/licenses/gpl-2.0.html"><img src="https://img.shields.io/badge/license-GPL--2.0--or--later-orange" alt="License"></a>
@@ -307,6 +307,11 @@ Per-page selector, pagination controls, and the Scheduled Auto-Cleanup settings 
 ---
 
 ## Changelog
+
+### 1.5.13
+- CHANGE: Whitelist/Trash selection actions only show when items are selected
+- NEW: "Remove All from Whitelist" when the Whitelist tab has items
+- CHANGE: Restore All / Empty Trash always show when Trash has items; Delete Selected rename; stronger Empty Trash backup warning
 
 ### 1.5.12
 - NEW: Settings and Donate links on the Plugins screen

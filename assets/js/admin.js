@@ -157,6 +157,11 @@
                 }
             });
 
+            $('#olimc-remove-all-whitelist-btn').on('click', function() {
+                if (!confirm(self.str('confirm_remove_whitelist_all'))) return;
+                self.removeWhitelistAll();
+            });
+
             $('#olimc-bulk-restore-btn').on('click', function() {
                 var ids = self.getSelectedIds();
                 if (!ids.length) { self.toast(self.str('no_selection'), 'info'); return; }
@@ -175,7 +180,7 @@
                 self.restoreAll();
             });
 
-            // Empty Trash
+            // Empty Trash — strong warning: irreversible, backup first
             $('#olimc-empty-trash-btn').on('click', function() {
                 if (!confirm(self.str('confirm_empty_trash'))) return;
                 self.emptyTrash();
@@ -443,28 +448,45 @@
         },
 
         updateBulkBar: function() {
-            // Show/hide relevant bulk buttons based on tab. All actions are in the DOM
-            // so switching tabs via AJAX can reveal Restore/Delete/Empty Trash immediately.
-            var tab = this.currentTab;
-            $('.olimc-tab-unused').toggle(tab === 'unused');
-            $('.olimc-tab-whitelist').toggle(tab === 'whitelist');
-            $('.olimc-tab-trash').toggle(tab === 'trash');
+            // Tab-scoped buttons stay in the DOM; visibility is refined in updateActionButtons
+            // (selection vs "has items" vs Trash All Unused).
             this.updateActionButtons();
+        },
+
+        tabItemCount: function(tab) {
+            var id = tab === 'whitelist' ? '#olimc-whitelist-count'
+                : tab === 'trash' ? '#olimc-trash-count'
+                : '#olimc-unused-count';
+            var n = parseInt(String($(id).text()).replace(/[^\d]/g, ''), 10);
+            return isNaN(n) ? 0 : n;
         },
 
         updateActionButtons: function() {
             var tab = this.currentTab;
-            var count = $('.olimc-item-cb:checked').length;
+            var selected = $('.olimc-item-cb:checked').length;
+            var hasItems = this.tabItemCount(tab) > 0;
 
-            // Buttons that act on the current selection (e.g. Trash Selected,
-            // Whitelist Selected) only appear once at least one item is selected.
+            // Hide every tab action first, then reveal the ones that apply.
+            $('.olimc-tab-unused, .olimc-tab-whitelist, .olimc-tab-trash').hide();
+
+            // Selection-based actions (Trash/Whitelist/Remove/Restore/Delete Selected).
             $('.olimc-needs-selection').each(function() {
                 var $btn = $(this);
-                $btn.toggle($btn.hasClass('olimc-tab-' + tab) && count >= 1);
+                if ($btn.hasClass('olimc-tab-' + tab) && selected >= 1) {
+                    $btn.show();
+                }
             });
 
-            // "Trash All Unused" is only offered once more than one item is selected.
-            $('#olimc-trash-all-btn').toggle(tab === 'unused' && count > 1);
+            // Always-on when the tab has items (Remove All / Restore All / Empty Trash).
+            $('.olimc-when-has-items').each(function() {
+                var $btn = $(this);
+                if ($btn.hasClass('olimc-tab-' + tab) && hasItems) {
+                    $btn.show();
+                }
+            });
+
+            // "Trash All Unused" only when more than one item is selected on Unused.
+            $('#olimc-trash-all-btn').toggle(tab === 'unused' && selected > 1);
         },
 
         // ─── Actions ────────────────────────────────────────────────
@@ -642,6 +664,28 @@
                     $('.olimc-loading').removeClass('olimc-loading');
                     self.toast(res.data, 'error');
                 }
+            });
+        },
+
+        removeWhitelistAll: function() {
+            var self = this;
+            var $btn = $('#olimc-remove-all-whitelist-btn');
+            $btn.prop('disabled', true).text(self.str('starting'));
+
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_remove_whitelist_all',
+                nonce: olimcObj.nonce
+            }, function(res) {
+                $btn.prop('disabled', false).text(self.str('remove_all_whitelist'));
+                if (res.success) {
+                    self.toast(res.data.message, 'success');
+                    self.loadResults();
+                } else {
+                    self.toast(res.data || self.str('network_error'), 'error');
+                }
+            }).fail(function() {
+                $btn.prop('disabled', false).text(self.str('remove_all_whitelist'));
+                self.toast(self.str('network_error'), 'error');
             });
         },
 
