@@ -5,7 +5,7 @@ Tags: media, cleanup, unused images, media cleaner, disk space
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.5.15
+Stable tag: 1.5.20
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -104,6 +104,34 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 4. Scan sources information panel
 
 == Changelog ==
+
+= 1.5.20 =
+* FIX: A file that another attachment still references is kept on every deletion path. Trash, the 30-day empty, and the Media Library go through the same guard. Imagify is not allowed to delete the WebP, AVIF, or backup of a shared file
+* FIX: The plugin's own options, transients, and meta are ignored while scanning, so a previous result list is not treated as usage
+* FIX: Edited-image backups in _wp_attachment_backup_sizes count as shared files. The file index is read once per request
+
+= 1.5.19 =
+* FIX: Upload URLs inside HTML stop at the closing quote, tag, parenthesis, query string, or anchor, so a linked file such as a PDF in page content is kept
+* FIX: An attachment that shares its file or a generated size with an attachment that is in use is marked used. Permanent delete never unlinks a file another attachment still references
+
+= 1.5.18 =
+* FIX: ACF meta keys that contain a hyphen (for example highlight-image) are included. Values are passed through $wpdb->prepare() instead of being dropped by a character whitelist
+* FIX: Upload URL detection uses wp_upload_dir() (base URL, protocol-less URL, path, and directory, including multisite) so Bedrock sites under /app/uploads match the ACF URL return format
+* FIX: When ACF is active, a chunked raw-meta pass still counts non-ACF references (page builders, SEO, serialized IDs, URLs in meta) as used
+* CHANGE: AJAX and cron keep separate scan state, a lock, and a pending-results option so they cannot overwrite each other or rewrite the full unused list on every batch
+
+= 1.5.17 =
+* FIX: ACF image fields (including the default array return format on custom post types such as concert) are detected with indexed meta_key lookups from acf_get_field_groups() / acf_get_fields(), instead of one LIKE query per stored key
+* FIX: Load ACF local JSON and PHP field groups before scanning, so cron does not miss field groups that are not registered yet
+* FIX: Nested repeater, flexible content, group and clone fields (for example content_blocks_4_image_carousel_images) are resolved from the ACF reference meta, then loaded in batches
+* FIX: If ACF is inactive or field groups cannot be resolved, a chunked raw-meta scan is used. An incomplete or failed scan marks nothing as unused
+* CHANGE: Scans resume across AJAX and cron requests. Scheduled runs still only scan — they never trash or delete media
+
+= 1.5.16 =
+* FIX: Reliable ACF attachment detection from raw post meta (including `_field` references), even when ACF is inactive — fixes false “unused” results for CPT fields such as concert `image` (ID, array, and URL return formats)
+* FIX: Gallery and repeater/flexible/clone sub-fields, options pages, term meta, and user meta are scanned with a generic fallback for any attachment ID stored in meta
+* CHANGE: Scheduled auto-cleanup now runs a scan only; media are never trashed or deleted automatically (manual confirmation still required in the admin)
+* CHANGE: Trash and delete confirmations show a filename preview; trash actions remind you that files go to Media Trash first
 
 = 1.5.15 =
 * NEW: CSV export includes a Status column (Unused / Whitelist / Trash) and exports all three categories in one file so you can filter/categorize in a spreadsheet. Search, type filter, and sort still apply.
@@ -211,6 +239,21 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 * Native WordPress admin UI — no external dependencies
 
 == Upgrade Notice ==
+
+= 1.5.20 =
+Shared files stay on disk even if an attachment is trashed or deleted outside this plugin, including by Imagify. A previous scan result is no longer treated as proof that a file is in use.
+
+= 1.5.19 =
+Fixes linked files missed inside HTML, and stops permanent delete from removing a file that another attachment still uses. Update before deleting anything the 1.5.18 scan flagged.
+
+= 1.5.18 =
+Fixes missed ACF fields whose names contain a hyphen, and upload URLs on Bedrock (/app/uploads). Non-ACF meta is scanned again. Update before deleting anything the 1.5.17 scan flagged.
+
+= 1.5.17 =
+Fixes ACF media detection on large sites (no per-key LIKE scans). Failed scans no longer flag media as unused.
+
+= 1.5.16 =
+Critical fix for ACF image/file usage detection; scheduled tasks no longer trash media automatically.
 
 = 1.5.15 =
 CSV export now includes a Status column and covers Unused, Whitelist, and Trash in one file.

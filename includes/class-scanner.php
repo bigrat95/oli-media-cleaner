@@ -5,6 +5,10 @@ class OLIMC_Scanner {
 
     private $used_ids = [];
     private $path_cache = [];
+    /** @var array<int, true>|null */
+    private $attachment_id_index = null;
+    /** @var string[] Field keys (field_xxx) for image / file / gallery, filled while walking ACF definitions. */
+    private $acf_media_field_key_buffer = [];
 
     /**
      * Run a full scan. Returns array of unused attachment IDs.
@@ -37,26 +41,278 @@ class OLIMC_Scanner {
      */
     public function collect_used_ids() {
         $this->used_ids = [];
+        $this->ensure_attachment_lookup();
 
+        // AJAX and cron must call OLIMC_Acf_Meta_Scanner::step() instead. This
+        // synchronous helper stops before max_execution_time on web requests.
+        $engine   = new OLIMC_Acf_Meta_Scanner($this);
+        $state    = $engine->initial_state();
+        $deadline = $this->synchronous_scan_deadline();
+        $guard    = 0;
+        while (!in_array($state['phase'], ['done', 'failed'], true) && $guard < 1000000) {
+            if (microtime(true) >= $deadline) {
+                $state['phase'] = 'failed';
+                $state['error'] = 'Scan stopped before the PHP time limit.';
+                break;
+            }
+            $remaining_ms = (int) max(200, ($deadline - microtime(true)) * 1000);
+            $state        = $engine->step($state, min(2000, $remaining_ms));
+            $guard++;
+        }
+
+        if (!OLIMC_Acf_Meta_Scanner::may_mark_unused($state)) {
+            // Incomplete or failed scan: every known attachment stays "used".
+            $ids = $this->get_all_attachment_ids();
+            if (empty($ids) && is_array($this->attachment_id_index)) {
+                $ids = array_keys($this->attachment_id_index);
+            }
+            $this->used_ids = array_map('intval', $ids);
+            return $this->used_ids;
+        }
+
+        $this->used_ids = array_map('intval', array_keys($state['used']));
+        return $this->used_ids;
+    }
+
+    /**
+     * Wall clock after which a synchronous scan must stop and fail safe.
+     *
+     * Web SAPIs honour max_execution_time (minus a few seconds). CLI has no
+     * request limit; the cap only prevents a runaway loop.
+     *
+     * @return float
+     */
+    private function synchronous_scan_deadline() {
+        $max = function_exists('ini_get') ? (int) ini_get('max_execution_time') : 0;
+        $cli = function_exists('php_sapi_name') && php_sapi_name() === 'cli';
+        if ($cli || $max <= 0) {
+            return microtime(true) + 3600;
+        }
+        return microtime(true) + max(5, $max - 5);
+    }
+
+    /**
+     * Sources that are not the ACF meta walk (content, WooCommerce, theme files, …).
+     */
+    public function collect_auxiliary_sources() {
         $this->collect_featured_images();
         $this->collect_post_content_images();
-        $this->collect_postmeta_images();
         $this->collect_option_images();
         $this->collect_woocommerce_gallery();
         $this->collect_woocommerce_variations();
         $this->collect_site_identity();
         $this->collect_widget_images();
         $this->collect_elementor_images();
-        $this->collect_acf_all_fields();
-        $this->collect_acf_option_pages();
         $this->collect_taxonomy_thumbnails();
         $this->collect_term_description_images();
         $this->collect_theme_files();
         $this->collect_css_background_images();
-        $this->collect_serialized_postmeta();
+    }
 
-        $this->used_ids = array_unique(array_map('intval', array_filter($this->used_ids)));
-        return $this->used_ids;
+    /**
+     * Load ACF, including local JSON and PHP field groups, then list media fields.
+     *
+     * Returns null when ACF is inactive or field groups could not be resolved
+     * (caller must use the raw-meta fallback). An empty list means ACF is active
+     * and simply has no image/file/gallery fields.
+     *
+     * @return array{names: string[], keys: string[], gallery_names: string[]}|null
+     */
+    public function get_acf_media_field_targets() {
+        $this->acf_media_field_key_buffer = [];
+        if (!$this->ensure_acf_loaded()) {
+            return null;
+        }
+
+        $groups = acf_get_field_groups();
+        if (!is_array($groups) || $groups === []) {
+            return null;
+        }
+
+        $image_keys   = [];
+        $file_keys    = [];
+        $gallery_keys = [];
+        $all_keys     = [];
+        $resolved     = false;
+
+        foreach ($groups as $group) {
+            if (!is_array($group) || empty($group['key'])) {
+                continue;
+            }
+            $fields = function_exists('acf_get_fields') ? acf_get_fields($group['key']) : null;
+            if (!is_array($fields)) {
+                continue;
+            }
+            $resolved = true;
+            $this->collect_acf_field_keys_recursive($fields, $image_keys, $file_keys, $gallery_keys, $all_keys);
+        }
+
+        if (!$resolved) {
+            return null;
+        }
+
+        return [
+            'names'         => array_values(array_unique(array_merge($image_keys, $file_keys, $gallery_keys))),
+            'keys'          => array_values(array_unique($this->acf_media_field_key_buffer)),
+            'gallery_names' => array_values(array_unique($gallery_keys)),
+        ];
+    }
+
+    /**
+     * Make sure ACF has booted and local JSON / PHP groups are included.
+     *
+     * Cron and early AJAX used to call acf_get_field_groups() before acf/init,
+     * which skips theme JSON (the concert field group on sites like osm.ca).
+     *
+     * @return bool Whether the ACF API is available.
+     */
+    private function ensure_acf_loaded() {
+        if (!function_exists('acf_get_field_groups')) {
+            return false;
+        }
+        $init_done       = function_exists('did_action') && did_action('init');
+        $acf_init_done   = function_exists('did_action') && did_action('acf/init');
+        $fields_included = function_exists('did_action') && did_action('acf/include_fields');
+
+        // Local JSON is loaded on acf/include_fields. After WordPress init, do not
+        // call acf_init() again (that re-registers hooks). Call include_fields
+        // directly when it has not run yet. acf_init() is only for a scan that
+        // really is running before init.
+        if (!$fields_included && function_exists('acf_include_fields')) {
+            if (!$init_done && !$acf_init_done && function_exists('acf_init')) {
+                acf_init();
+            } else {
+                acf_include_fields();
+            }
+        }
+        return true;
+    }
+
+    /**
+     * IDs recorded by auxiliary collectors since the last drain.
+     *
+     * @return int[]
+     */
+    public function drain_used_ids() {
+        $ids = $this->used_ids;
+        $this->used_ids = [];
+        return $ids;
+    }
+
+    /**
+     * Recursively collect ACF field names by type.
+     *
+     * Clone fields do not expose the referenced group's fields as sub_fields, so
+     * we resolve $field['clone'] (group keys and/or field keys) via the ACF API.
+     *
+     * @param array      $fields        Field definitions.
+     * @param array      $image_keys    Image field names.
+     * @param array      $file_keys     File field names.
+     * @param array      $gallery_keys  Gallery field names.
+     * @param array      $all_keys      Every field name seen.
+     * @param array|null $visited_clones Clone selectors already followed.
+     */
+    private function collect_acf_field_keys_recursive($fields, &$image_keys, &$file_keys, &$gallery_keys, &$all_keys, &$visited_clones = null) {
+        if ($visited_clones === null) {
+            $visited_clones = [];
+        }
+
+        foreach ($fields as $field) {
+            if (!is_array($field)) {
+                continue;
+            }
+
+            if (!empty($field['name'])) {
+                $all_keys[] = $field['name'];
+            }
+
+            $type = isset($field['type']) ? $field['type'] : '';
+
+            switch ($type) {
+                case 'image':
+                    $image_keys[] = $field['name'];
+                    break;
+                case 'file':
+                    $file_keys[] = $field['name'];
+                    break;
+                case 'gallery':
+                    $gallery_keys[] = $field['name'];
+                    break;
+            }
+
+            if (in_array($type, ['image', 'file', 'gallery'], true) && !empty($field['key']) && is_string($field['key'])) {
+                $this->acf_media_field_key_buffer[] = $field['key'];
+            }
+
+            if (!empty($field['sub_fields'])) {
+                $this->collect_acf_field_keys_recursive($field['sub_fields'], $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
+            }
+            if (!empty($field['layouts'])) {
+                foreach ($field['layouts'] as $layout) {
+                    if (!empty($layout['sub_fields'])) {
+                        $this->collect_acf_field_keys_recursive($layout['sub_fields'], $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
+                    }
+                }
+            }
+
+            if ($type === 'clone' && !empty($field['clone']) && is_array($field['clone'])) {
+                $this->collect_acf_cloned_fields($field['clone'], $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
+            }
+        }
+    }
+
+    /**
+     * Follow ACF clone selectors to the referenced field group or field definitions.
+     *
+     * @param array $clone_selectors Group keys (group_xxx) and/or field keys (field_xxx).
+     * @param array $image_keys      Image field names.
+     * @param array $file_keys       File field names.
+     * @param array $gallery_keys    Gallery field names.
+     * @param array $all_keys        Every field name seen.
+     * @param array $visited_clones  Clone selectors already followed.
+     */
+    private function collect_acf_cloned_fields($clone_selectors, &$image_keys, &$file_keys, &$gallery_keys, &$all_keys, &$visited_clones) {
+        foreach ($clone_selectors as $clone_selector) {
+            if (!is_string($clone_selector) || $clone_selector === '') {
+                continue;
+            }
+            if (isset($visited_clones[$clone_selector])) {
+                continue;
+            }
+            $visited_clones[$clone_selector] = true;
+
+            $cloned_fields = function_exists('acf_get_fields') ? acf_get_fields($clone_selector) : null;
+            if (!empty($cloned_fields) && is_array($cloned_fields)) {
+                $this->collect_acf_field_keys_recursive($cloned_fields, $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
+                continue;
+            }
+
+            if (!function_exists('acf_get_field')) {
+                continue;
+            }
+            $cloned_field = acf_get_field($clone_selector);
+            if (!empty($cloned_field) && is_array($cloned_field)) {
+                $this->collect_acf_field_keys_recursive([$cloned_field], $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
+            }
+        }
+    }
+
+    /**
+     * Whether a meta key is this ACF field, including repeater / flex / clone prefixes.
+     *
+     * Matches `images`, `content_blocks_4_images`, and
+     * `content_blocks_4_image_carousel_images` (clone with prefix_name).
+     *
+     * @param string $meta_key   Stored meta key.
+     * @param string $field_name ACF field name.
+     * @return bool
+     */
+    public function acf_meta_key_matches_field($meta_key, $field_name) {
+        if ($meta_key === $field_name) {
+            return true;
+        }
+        $suffix = '_' . $field_name;
+        return substr($meta_key, -strlen($suffix)) === $suffix;
     }
 
     /**
@@ -64,6 +320,56 @@ class OLIMC_Scanner {
      */
     public function is_used($attachment_id) {
         return in_array((int) $attachment_id, $this->used_ids, true);
+    }
+
+    /**
+     * Merge attachment IDs discovered by meta parsers.
+     *
+     * @param int[]|int|string $ids Attachment ID or list of IDs.
+     */
+    public function merge_used_attachment_ids( $ids ) {
+        if ( ! is_array( $ids ) ) {
+            $ids = [ $ids ];
+        }
+        foreach ( $ids as $id ) {
+            $id = (int) $id;
+            if ( $id > 0 ) {
+                $this->used_ids[] = $id;
+            }
+        }
+    }
+
+    /**
+     * Build a lookup of valid attachment post IDs (for safe generic meta matching).
+     */
+    public function ensure_attachment_lookup() {
+        if ( null !== $this->attachment_id_index ) {
+            return;
+        }
+        global $wpdb;
+        $ids = $wpdb->get_col(
+            "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment'"
+        );
+        $this->attachment_id_index = array_fill_keys( array_map( 'intval', $ids ), true );
+    }
+
+    /**
+     * @param int $id Attachment ID.
+     * @return bool
+     */
+    public function is_known_attachment_id( $id ) {
+        $this->ensure_attachment_lookup();
+        return isset( $this->attachment_id_index[ (int) $id ] );
+    }
+
+    /**
+     * Resolve a relative uploads path to an attachment ID (for parsers).
+     *
+     * @param string $path Upload path relative to the site uploads directory.
+     * @return int
+     */
+    public function resolve_upload_path_to_id( $path ) {
+        return (int) $this->find_attachment_by_path( $path );
     }
 
     /**
@@ -159,13 +465,17 @@ class OLIMC_Scanner {
 
     private function collect_post_content_images() {
         global $wpdb;
-        // Get all post content that references uploads
-        $rows = $wpdb->get_col(
+        $like = $this->upload_content_like();
+        if ($like === null) {
+            return;
+        }
+        $rows = $wpdb->get_col($wpdb->prepare(
             "SELECT post_content FROM {$wpdb->posts}
-             WHERE post_content LIKE '%wp-content/uploads%'
+             WHERE post_content LIKE %s
              AND post_status != 'trash'
-             AND post_type NOT IN ('revision', 'attachment')"
-        );
+             AND post_type NOT IN ('revision', 'attachment')",
+            $like
+        ));
 
         $attachment_ids = [];
         foreach ($rows as $content) {
@@ -181,48 +491,13 @@ class OLIMC_Scanner {
             if (preg_match_all('/data-id=["\'](\d+)["\']/', $content, $matches)) {
                 $attachment_ids = array_merge($attachment_ids, $matches[1]);
             }
-            // Fallback: find filenames in uploads and resolve to IDs
-            if (preg_match_all('#wp-content/uploads/([^\s"\'<>]+)#', $content, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $attachment_ids[] = $id;
-                }
+            foreach (OLIMC_Media_Usage_Parser::relative_upload_paths($content) as $path) {
+                $id = $this->find_attachment_by_path($path);
+                if ($id) $attachment_ids[] = $id;
             }
         }
 
         $this->used_ids = array_merge($this->used_ids, $attachment_ids);
-    }
-
-    private function collect_postmeta_images() {
-        global $wpdb;
-        // Find attachment IDs stored in postmeta (numeric values that are valid attachments)
-        // This catches ACF image fields stored as IDs, WooCommerce product images, etc.
-        $rows = $wpdb->get_col(
-            "SELECT DISTINCT meta_value FROM {$wpdb->postmeta}
-             WHERE meta_value REGEXP '^[0-9]+$'
-             AND meta_value > 0
-             AND meta_key NOT IN ('_edit_lock', '_edit_last', '_wp_old_date', '_price', '_regular_price', '_sale_price', '_stock', '_weight', '_length', '_width', '_height', 'total_sales', '_product_version', '_wp_page_template')
-             AND CAST(meta_value AS UNSIGNED) IN (
-                SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment'
-             )"
-        );
-        $this->used_ids = array_merge($this->used_ids, $rows);
-
-        // Find URLs in postmeta
-        $url_rows = $wpdb->get_col(
-            "SELECT DISTINCT meta_value FROM {$wpdb->postmeta}
-             WHERE meta_value LIKE '%wp-content/uploads%'
-             AND meta_key NOT LIKE '_transient%'"
-        );
-
-        foreach ($url_rows as $val) {
-            if (preg_match_all('#wp-content/uploads/([^\s"\'<>,;}\]]+)#', $val, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
-        }
     }
 
     private function collect_option_images() {
@@ -298,13 +573,7 @@ class OLIMC_Scanner {
                     $this->used_ids = array_merge($this->used_ids, explode(',', $ids_str));
                 }
             }
-            // URLs in widget content
-            if (preg_match_all('#wp-content/uploads/([^\s"\'<>,;}\\\]+)#', $serialized, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
+            $this->merge_upload_paths_from_text($serialized);
         }
     }
 
@@ -326,371 +595,19 @@ class OLIMC_Scanner {
                     }
                 }
             }
-            // Find image URLs
-            if (preg_match_all('#wp-content/uploads/([^\s"\'<>,;}\\\]+)#', $json, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
+            $this->merge_upload_paths_from_text($json);
         }
 
         // Elementor global CSS and data
         $elementor_global = get_option('elementor_custom_icon_sets_config');
         if (is_array($elementor_global)) {
-            $serialized = serialize($elementor_global);
-            if (preg_match_all('#wp-content/uploads/([^\s"\'<>,;}\\\]+)#', $serialized, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
-        }
-    }
-
-    /**
-     * Deep ACF scan — covers ALL field types:
-     * image, file, gallery, repeater, flexible_content, group, clone, post_object with images.
-     */
-    private function collect_acf_all_fields() {
-        if (!function_exists('acf_get_field_groups')) return;
-        global $wpdb;
-
-        // 1. Get all ACF field groups and their fields (recursive for sub-fields)
-        $image_keys = [];
-        $file_keys = [];
-        $gallery_keys = [];
-        $all_acf_keys = [];
-
-        $field_groups = acf_get_field_groups();
-        foreach ($field_groups as $group) {
-            $fields = acf_get_fields($group['key']);
-            if ($fields) {
-                $this->collect_acf_field_keys_recursive($fields, $image_keys, $file_keys, $gallery_keys, $all_acf_keys);
-            }
-        }
-
-        $image_keys   = array_values(array_unique($image_keys));
-        $file_keys    = array_values(array_unique($file_keys));
-        $gallery_keys = array_values(array_unique($gallery_keys));
-
-        // 2. Image and File fields (stored as attachment ID in postmeta)
-        // Already partially caught by collect_postmeta_images, but let's be explicit
-        $image_file_keys = array_merge($image_keys, $file_keys);
-        if (!empty($image_file_keys)) {
-            $placeholders = implode(',', array_fill(0, count($image_file_keys), '%s'));
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
-            $ids = $wpdb->get_col( $wpdb->prepare(
-                "SELECT DISTINCT meta_value FROM {$wpdb->postmeta}
-                 WHERE meta_key IN ($placeholders)
-                 AND meta_value REGEXP '^[0-9]+$'
-                 AND meta_value > 0",
-                ...$image_file_keys
-            ) );
-            $this->used_ids = array_merge($this->used_ids, $ids);
-        }
-
-        // 3. Gallery fields (stored as serialized array of attachment IDs)
-        if (!empty($gallery_keys)) {
-            $placeholders = implode(',', array_fill(0, count($gallery_keys), '%s'));
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
-            $rows = $wpdb->get_col( $wpdb->prepare(
-                "SELECT meta_value FROM {$wpdb->postmeta}
-                 WHERE meta_key IN ($placeholders)
-                 AND meta_value != ''",
-                ...$gallery_keys
-            ) );
-            foreach ($rows as $val) {
-                $data = @unserialize($val);
-                if (is_array($data)) {
-                    foreach ($data as $item) {
-                        if (is_numeric($item)) {
-                            $this->used_ids[] = (int) $item;
-                        } elseif (is_array($item) && isset($item['id'])) {
-                            $this->used_ids[] = (int) $item['id'];
-                        } elseif (is_array($item) && isset($item['ID'])) {
-                            $this->used_ids[] = (int) $item['ID'];
-                        }
-                    }
-                }
-            }
-        }
-
-        // 4. Repeater / Flexible Content sub-fields
-        // ACF stores repeater sub-fields as: {parent_field}_{row_index}_{sub_field}
-        // We look for any meta_key that matches known image/file/gallery sub-field names
-        $this->collect_acf_repeater_sub_fields($image_keys, $file_keys, $gallery_keys);
-
-        // 5. Serialized ACF arrays (image/file return format = array)
-        $rows = $wpdb->get_col(
-            "SELECT meta_value FROM {$wpdb->postmeta}
-             WHERE meta_value LIKE 'a:%'
-             AND (meta_value LIKE '%\"id\"%' OR meta_value LIKE '%\"ID\"%')
-             AND meta_value LIKE '%upload%'"
-        );
-        foreach ($rows as $val) {
-            $this->extract_ids_from_serialized($val);
-        }
-
-        // 6. ACF URL-based return format (image field returns URL string)
-        if (!empty($image_file_keys)) {
-            $placeholders = implode(',', array_fill(0, count($image_file_keys), '%s'));
-            $like_uploads = '%' . $wpdb->esc_like('wp-content/uploads') . '%';
-            // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
-            $urls = $wpdb->get_col( $wpdb->prepare(
-                "SELECT DISTINCT meta_value FROM {$wpdb->postmeta}
-                 WHERE meta_key IN ($placeholders)
-                 AND meta_value LIKE %s",
-                ...array_merge($image_file_keys, [$like_uploads])
-            ) );
-            foreach ($urls as $url) {
-                if (preg_match('#wp-content/uploads/([^\s"\'\'<>,;}\]]+)#', $url, $m)) {
-                    $id = $this->find_attachment_by_path($m[1]);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
-        }
-    }
-
-    /**
-     * Recursively collect ACF field names by type.
-     *
-     * Clone fields do not expose the referenced group's fields as sub_fields, so
-     * we resolve $field['clone'] (group keys and/or field keys) via the ACF API.
-     *
-     * @param array $visited_clones Clone selectors already followed (prevents loops).
-     */
-    private function collect_acf_field_keys_recursive($fields, &$image_keys, &$file_keys, &$gallery_keys, &$all_keys, &$visited_clones = null) {
-        if ($visited_clones === null) {
-            $visited_clones = [];
-        }
-
-        foreach ($fields as $field) {
-            if (!is_array($field)) {
-                continue;
-            }
-
-            if (!empty($field['name'])) {
-                $all_keys[] = $field['name'];
-            }
-
-            $type = isset($field['type']) ? $field['type'] : '';
-
-            switch ($type) {
-                case 'image':
-                    $image_keys[] = $field['name'];
-                    break;
-                case 'file':
-                    $file_keys[] = $field['name'];
-                    break;
-                case 'gallery':
-                    $gallery_keys[] = $field['name'];
-                    break;
-            }
-
-            // Recurse into sub_fields (repeater, group, flexible_content layouts)
-            if (!empty($field['sub_fields'])) {
-                $this->collect_acf_field_keys_recursive($field['sub_fields'], $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
-            }
-            if (!empty($field['layouts'])) {
-                foreach ($field['layouts'] as $layout) {
-                    if (!empty($layout['sub_fields'])) {
-                        $this->collect_acf_field_keys_recursive($layout['sub_fields'], $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
-                    }
-                }
-            }
-
-            if ($type === 'clone' && !empty($field['clone']) && is_array($field['clone'])) {
-                $this->collect_acf_cloned_fields($field['clone'], $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
-            }
-        }
-    }
-
-    /**
-     * Follow ACF clone selectors to the referenced field group or field definitions.
-     *
-     * @param array $clone_selectors Group keys (group_xxx) and/or field keys (field_xxx).
-     */
-    private function collect_acf_cloned_fields($clone_selectors, &$image_keys, &$file_keys, &$gallery_keys, &$all_keys, &$visited_clones) {
-        foreach ($clone_selectors as $clone_selector) {
-            if (!is_string($clone_selector) || $clone_selector === '') {
-                continue;
-            }
-            if (isset($visited_clones[$clone_selector])) {
-                continue;
-            }
-            $visited_clones[$clone_selector] = true;
-
-            $cloned_fields = function_exists('acf_get_fields') ? acf_get_fields($clone_selector) : null;
-            if (!empty($cloned_fields) && is_array($cloned_fields)) {
-                $this->collect_acf_field_keys_recursive($cloned_fields, $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
-                continue;
-            }
-
-            if (!function_exists('acf_get_field')) {
-                continue;
-            }
-            $cloned_field = acf_get_field($clone_selector);
-            if (!empty($cloned_field) && is_array($cloned_field)) {
-                $this->collect_acf_field_keys_recursive([$cloned_field], $image_keys, $file_keys, $gallery_keys, $all_keys, $visited_clones);
-            }
-        }
-    }
-
-    /**
-     * Whether a postmeta key is this ACF field, including nested repeater / flex / clone prefixes.
-     *
-     * Matches `images`, `content_blocks_4_images`, and
-     * `content_blocks_4_image_carousel_images` (clone with prefix_name).
-     */
-    private function acf_meta_key_matches_field($meta_key, $field_name) {
-        if ($meta_key === $field_name) {
-            return true;
-        }
-        $suffix = '_' . $field_name;
-        return substr($meta_key, -strlen($suffix)) === $suffix;
-    }
-
-    /**
-     * Scan repeater/flex sub-fields stored as {parent}_{index}_{child} in postmeta.
-     */
-    private function collect_acf_repeater_sub_fields($image_keys, $file_keys, $gallery_keys) {
-        $sub_field_names = array_merge($image_keys, $file_keys, $gallery_keys);
-        if (empty($sub_field_names)) return;
-        global $wpdb;
-
-        // Build LIKE conditions for each sub-field name
-        $like_conditions = [];
-        foreach ($sub_field_names as $name) {
-            $escaped = $wpdb->esc_like($name);
-            $like_conditions[] = $wpdb->prepare("meta_key LIKE %s", '%_' . $escaped);
-        }
-
-        $where = implode(' OR ', $like_conditions);
-        $rows = $wpdb->get_results(
-            "SELECT meta_key, meta_value FROM {$wpdb->postmeta}
-             WHERE ($where)
-             AND meta_value != ''"
-        );
-
-        foreach ($rows as $row) {
-            $val = $row->meta_value;
-            $key = $row->meta_key;
-
-            // Determine if this sub-field is image/file (numeric ID) or gallery (serialized array)
-            $is_gallery = false;
-            foreach ($gallery_keys as $gk) {
-                if ($this->acf_meta_key_matches_field($key, $gk)) {
-                    $is_gallery = true;
-                    break;
-                }
-            }
-
-            if ($is_gallery) {
-                $data = @unserialize($val);
-                if (is_array($data)) {
-                    foreach ($data as $item) {
-                        if (is_numeric($item)) {
-                            $this->used_ids[] = (int) $item;
-                        } elseif (is_array($item) && isset($item['id'])) {
-                            $this->used_ids[] = (int) $item['id'];
-                        } elseif (is_array($item) && isset($item['ID'])) {
-                            $this->used_ids[] = (int) $item['ID'];
-                        }
-                    }
-                }
-            } elseif (is_numeric($val) && (int)$val > 0) {
-                $this->used_ids[] = (int) $val;
-            } elseif (strpos($val, 'wp-content/uploads') !== false) {
-                if (preg_match('#wp-content/uploads/([^\s"\'\'<>,;}\]]+)#', $val, $m)) {
-                    $id = $this->find_attachment_by_path($m[1]);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
-        }
-    }
-
-    /**
-     * Extract attachment IDs from serialized data recursively.
-     */
-    private function extract_ids_from_serialized($val) {
-        $data = @unserialize($val);
-        if (!is_array($data)) return;
-
-        foreach ($data as $key => $item) {
-            if (is_array($item)) {
-                if (isset($item['id']) && is_numeric($item['id'])) {
-                    $this->used_ids[] = (int) $item['id'];
-                }
-                if (isset($item['ID']) && is_numeric($item['ID'])) {
-                    $this->used_ids[] = (int) $item['ID'];
-                }
-                if (isset($item['url']) && strpos($item['url'], 'wp-content/uploads') !== false) {
-                    if (preg_match('#wp-content/uploads/([^\s"\'\'<>,;}\]]+)#', $item['url'], $m)) {
-                        $fid = $this->find_attachment_by_path($m[1]);
-                        if ($fid) $this->used_ids[] = $fid;
-                    }
-                }
-                // Recurse
-                $this->extract_ids_from_serialized(serialize($item));
-            } elseif (is_numeric($item) && (int)$item > 0) {
-                // Could be gallery array of IDs
-            }
-        }
-    }
-
-    /**
-     * Scan ACF Options pages — data stored in wp_options with 'options_' prefix.
-     */
-    private function collect_acf_option_pages() {
-        if (!function_exists('acf_get_field_groups')) return;
-        global $wpdb;
-
-        // ACF options are stored in wp_options as options_{field_name}
-        $like_options = $wpdb->esc_like('options_') . '%';
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-        $rows = $wpdb->get_results( $wpdb->prepare(
-            "SELECT option_name, option_value FROM {$wpdb->options}
-             WHERE option_name LIKE %s
-             AND option_value != ''",
-            $like_options
-        ) );
-
-        foreach ($rows as $row) {
-            $val = $row->option_value;
-
-            // Numeric ID (image/file field)
-            if (is_numeric($val) && (int)$val > 0) {
-                // Verify it's an attachment
-                $is_attachment = $wpdb->get_var($wpdb->prepare(
-                    "SELECT ID FROM {$wpdb->posts} WHERE ID = %d AND post_type = 'attachment'",
-                    (int) $val
-                ));
-                if ($is_attachment) {
-                    $this->used_ids[] = (int) $val;
-                }
-                continue;
-            }
-
-            // Serialized array (gallery or image array format)
-            if (strpos($val, 'a:') === 0) {
-                $this->extract_ids_from_serialized($val);
-                continue;
-            }
-
-            // URL
-            if (strpos($val, 'wp-content/uploads') !== false) {
-                if (preg_match('#wp-content/uploads/([^\s"\'\'<>,;}\]]+)#', $val, $m)) {
-                    $id = $this->find_attachment_by_path($m[1]);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
+            $this->merge_upload_paths_from_text(serialize($elementor_global));
         }
     }
 
     /**
      * Scan ALL files in the active theme for hardcoded image references.
-     * Checks PHP, CSS, and JS files for wp-content/uploads paths.
+     * Checks PHP, CSS, and JS files for the current upload location.
      */
     private function collect_theme_files() {
         $theme_dir = get_stylesheet_directory();
@@ -707,7 +624,7 @@ class OLIMC_Scanner {
     }
 
     /**
-     * Recursively scan a directory for files referencing wp-content/uploads.
+     * Recursively scan a directory for files referencing the current upload location.
      */
     private function scan_directory_for_uploads($dir) {
         if (!is_dir($dir)) return;
@@ -736,23 +653,7 @@ class OLIMC_Scanner {
             $content = @file_get_contents($file->getPathname());
             if (!$content) continue;
 
-            // Find upload paths
-            if (preg_match_all('#wp-content/uploads/([^\s"\'\'<>\)\},;]+)#', $content, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $path = rtrim($path, '\\');
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
-
-            // Find get_site_url() . '/wp-content/uploads/...' patterns
-            if (preg_match_all('#/wp-content/uploads/([^\s"\'\'<>\)\},;]+)#', $content, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $path = rtrim($path, '\\');
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
+            $this->merge_upload_paths_from_text($content);
 
             // Find attachment IDs in PHP: wp_get_attachment_image(123), wp_get_attachment_url(456)
             if ($ext === 'php') {
@@ -768,51 +669,22 @@ class OLIMC_Scanner {
      */
     private function collect_css_background_images() {
         global $wpdb;
-        // Post content with inline styles
-        $rows = $wpdb->get_col(
+        $like = $this->upload_content_like();
+        if ($like === null) {
+            return;
+        }
+        $rows = $wpdb->get_col($wpdb->prepare(
             "SELECT post_content FROM {$wpdb->posts}
-             WHERE post_content LIKE '%background%upload%'
+             WHERE post_content LIKE %s
+             AND post_content LIKE %s
              AND post_status != 'trash'
-             AND post_type NOT IN ('revision', 'attachment')"
-        );
+             AND post_type NOT IN ('revision', 'attachment')",
+            '%' . $wpdb->esc_like('background') . '%',
+            $like
+        ));
 
         foreach ($rows as $content) {
-            if (preg_match_all('#background(?:-image)?\s*:\s*url\s*\(\s*[\'\'"]*([^\)\'\"]+wp-content/uploads/[^\)\'\"]+)#i', $content, $matches)) {
-                foreach ($matches[1] as $url) {
-                    if (preg_match('#wp-content/uploads/([^\s"\'\'<>\)\},;]+)#', $url, $m)) {
-                        $id = $this->find_attachment_by_path($m[1]);
-                        if ($id) $this->used_ids[] = $id;
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Deep scan serialized arrays in postmeta for attachment references.
-     * Catches complex plugin data structures.
-     */
-    private function collect_serialized_postmeta() {
-        global $wpdb;
-        // Find serialized arrays that contain upload references
-        $rows = $wpdb->get_col(
-            "SELECT meta_value FROM {$wpdb->postmeta}
-             WHERE meta_value LIKE 'a:%'
-             AND meta_value LIKE '%wp-content/uploads%'
-             AND meta_key NOT LIKE '_transient%'
-             LIMIT 5000"
-        );
-
-        foreach ($rows as $val) {
-            // Extract all upload paths from the serialized string
-            if (preg_match_all('#wp-content/uploads/([^\s"\'\'<>,;}\\\]]+)#', $val, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
-            // Also extract numeric IDs from serialized data
-            $this->extract_ids_from_serialized($val);
+            $this->merge_upload_paths_from_text($content);
         }
     }
 
@@ -837,23 +709,22 @@ class OLIMC_Scanner {
      */
     private function collect_term_description_images() {
         global $wpdb;
-        $rows = $wpdb->get_col(
-            "SELECT description FROM {$wpdb->term_taxonomy}
-             WHERE description LIKE '%wp-content/uploads%'"
-        );
+        $like = $this->upload_content_like();
+        $rows = [];
+        if ($like !== null) {
+            $rows = $wpdb->get_col($wpdb->prepare(
+                "SELECT description FROM {$wpdb->term_taxonomy}
+                 WHERE description LIKE %s",
+                $like
+            ));
+        }
 
         foreach ($rows as $description) {
             // Match wp-image-123 class
             if (preg_match_all('/wp-image-(\d+)/', $description, $matches)) {
                 $this->used_ids = array_merge($this->used_ids, $matches[1]);
             }
-            // Match image URLs in uploads
-            if (preg_match_all('#wp-content/uploads/([^\s"\'<>\)\},;]+)#', $description, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
+            $this->merge_upload_paths_from_text($description);
         }
 
         // Also check termmeta for image IDs/URLs (some plugins store images in term meta)
@@ -868,19 +739,354 @@ class OLIMC_Scanner {
         );
         $this->used_ids = array_merge($this->used_ids, $meta_ids);
 
-        // URLs stored in termmeta
-        $meta_urls = $wpdb->get_col(
-            "SELECT DISTINCT meta_value FROM {$wpdb->termmeta}
-             WHERE meta_value LIKE '%wp-content/uploads%'"
-        );
-        foreach ($meta_urls as $val) {
-            if (preg_match_all('#wp-content/uploads/([^\s"\'<>\)\},;]+)#', $val, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
+        if ($like !== null) {
+            $meta_urls = $wpdb->get_col($wpdb->prepare(
+                "SELECT DISTINCT meta_value FROM {$wpdb->termmeta}
+                 WHERE meta_value LIKE %s",
+                $like
+            ));
+            foreach ($meta_urls as $val) {
+                $this->merge_upload_paths_from_text($val);
+            }
+        }
+    }
+
+    /**
+     * Attachment IDs that are not in $used but share an upload path with one that is.
+     *
+     * Paths are the attached file and generated sizes (including original_image).
+     * Null means the lookup failed; the caller must not mark anything unused.
+     *
+     * @param array<int, mixed> $used Used attachment IDs.
+     * @return array<int, int>|null Map of attachment ID => 1, or null on database error.
+     */
+    public function ids_sharing_files_with_used(array $used) {
+        $normalized = [];
+        foreach ($used as $id => $_unused) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $normalized[$id] = 1;
+            }
+        }
+        if ($normalized === []) {
+            return [];
+        }
+        $index = $this->upload_path_index();
+        if ($index === null) {
+            return null;
+        }
+        $added = [];
+        $guard = 0;
+        do {
+            $changed = false;
+            $guard++;
+            foreach ($index as $ids) {
+                if (count($ids) < 2) {
+                    continue;
+                }
+                $hit = false;
+                foreach ($ids as $id) {
+                    if (isset($normalized[$id]) || isset($added[$id])) {
+                        $hit = true;
+                        break;
+                    }
+                }
+                if (!$hit) {
+                    continue;
+                }
+                foreach ($ids as $id) {
+                    if (!isset($normalized[$id]) && !isset($added[$id])) {
+                        $added[$id] = 1;
+                        $changed = true;
+                    }
+                }
+            }
+        } while ($changed && $guard < 10);
+        return $added;
+    }
+
+    /**
+     * Relative upload paths of this attachment that another attachment also references.
+     *
+     * Null means the lookup failed. Callers must not unlink files in that case.
+     *
+     * @param int $attachment_id Attachment ID.
+     * @return string[]|null
+     */
+    public function shared_relative_upload_paths($attachment_id) {
+        $attachment_id = (int) $attachment_id;
+        $index = $this->upload_path_index();
+        if ($index === null) {
+            return null;
+        }
+        $shared = [];
+        foreach ($index as $path => $ids) {
+            if (count($ids) > 1 && in_array($attachment_id, $ids, true)) {
+                $shared[] = $path;
+            }
+        }
+        return $shared;
+    }
+
+    /**
+     * Whether an absolute filesystem path is one of the relative upload paths.
+     *
+     * When wp_upload_dir() is available, the file must sit in that basedir and
+     * the remainder must equal the relative path. That keeps a main-site file
+     * from matching a subsite path that merely ends with the same suffix.
+     *
+     * @param string   $absolute  Absolute path passed to wp_delete_file.
+     * @param string[] $relatives Paths relative to the uploads directory.
+     * @return bool
+     */
+    public static function absolute_path_matches_relative($absolute, array $relatives) {
+        $absolute = str_replace('\\', '/', (string) $absolute);
+        $basedir = self::upload_basedir();
+        if ($basedir !== '') {
+            $prefix = rtrim($basedir, '/') . '/';
+            if (strpos($absolute, $prefix) !== 0) {
+                return false;
+            }
+            $relative = substr($absolute, strlen($prefix));
+            foreach ($relatives as $candidate) {
+                $candidate = ltrim(str_replace('\\', '/', (string) $candidate), '/');
+                if ($candidate !== '' && $candidate === $relative) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        foreach ($relatives as $relative) {
+            $relative = ltrim(str_replace('\\', '/', (string) $relative), '/');
+            if ($relative === '') {
+                continue;
+            }
+            $suffix = '/' . $relative;
+            if (substr($absolute, -strlen($suffix)) === $suffix) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * True when this absolute file, or the image it was derived from, is shared.
+     *
+     * Null means the index could not be read. Callers must keep the file.
+     * A trailing .webp or .avif is compared against the underlying image path.
+     *
+     * @param string $absolute Absolute path.
+     * @return bool|null
+     */
+    public function absolute_file_is_shared($absolute) {
+        $index = $this->upload_path_index();
+        if ($index === null) {
+            return null;
+        }
+        $candidates = [$absolute];
+        foreach (['.webp', '.avif'] as $extension) {
+            if (is_string($absolute) && strlen($absolute) > strlen($extension) && substr($absolute, -strlen($extension)) === $extension) {
+                $candidates[] = substr($absolute, 0, -strlen($extension));
+            }
+        }
+        foreach ($candidates as $candidate) {
+            foreach ($index as $path => $ids) {
+                if (count($ids) < 2) {
+                    continue;
+                }
+                if (self::absolute_path_matches_relative($candidate, [$path])) {
+                    return true;
                 }
             }
         }
+        return false;
+    }
+
+    /**
+     * Drop the cached file index. Tests use this when the database changes.
+     */
+    public static function reset_upload_path_index() {
+        self::$upload_path_index_cache = null;
+        self::$upload_path_index_ready = false;
+    }
+
+    /**
+     * @var array<string, int[]>|null
+     */
+    private static $upload_path_index_cache = null;
+
+    /**
+     * @var bool
+     */
+    private static $upload_path_index_ready = false;
+
+    /**
+     * path => attachment IDs that reference it (original file, size, or backup).
+     *
+     * Cached for the request so a bulk delete does not rescan postmeta per file.
+     *
+     * @return array<string, int[]>|null
+     */
+    private function upload_path_index() {
+        if (self::$upload_path_index_ready) {
+            return self::$upload_path_index_cache;
+        }
+        global $wpdb;
+        $wpdb->last_error = '';
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT post_id, meta_key, meta_value FROM {$wpdb->postmeta} WHERE meta_key IN (%s, %s, %s) AND meta_value != ''",
+            '_wp_attached_file',
+            '_wp_attachment_metadata',
+            '_wp_attachment_backup_sizes'
+        ));
+        if (!empty($wpdb->last_error) || !is_array($rows)) {
+            self::$upload_path_index_cache = null;
+            self::$upload_path_index_ready = true;
+            return null;
+        }
+
+        $by_id = [];
+        foreach ($rows as $row) {
+            $id = (int) $row->post_id;
+            if (!isset($by_id[$id])) {
+                $by_id[$id] = [
+                    'file' => '',
+                    'meta' => '',
+                    'backup' => '',
+                ];
+            }
+            $key = isset($row->meta_key) ? (string) $row->meta_key : '';
+            if ($key === '_wp_attached_file') {
+                $by_id[$id]['file'] = (string) $row->meta_value;
+            } elseif ($key === '_wp_attachment_metadata') {
+                $by_id[$id]['meta'] = $row->meta_value;
+            } elseif ($key === '_wp_attachment_backup_sizes') {
+                $by_id[$id]['backup'] = $row->meta_value;
+            }
+        }
+        $index = [];
+        foreach ($by_id as $id => $parts) {
+            $paths = $this->relative_paths_for_attachment_row($parts['file'], $parts['meta'], $parts['backup']);
+            foreach ($paths as $path) {
+                $index[$path][] = (int) $id;
+            }
+        }
+        foreach ($index as $path => $list) {
+            $index[$path] = array_values(array_unique($list));
+        }
+        self::$upload_path_index_cache = $index;
+        self::$upload_path_index_ready = true;
+        return $index;
+    }
+
+    /**
+     * @return string Uploads basedir, or an empty string when WordPress is not loaded.
+     */
+    private static function upload_basedir() {
+        if (!function_exists('wp_upload_dir')) {
+            return '';
+        }
+        $uploads = wp_upload_dir(null, false);
+        if (!is_array($uploads) || empty($uploads['basedir']) || !is_string($uploads['basedir'])) {
+            return '';
+        }
+        return rtrim(str_replace('\\', '/', $uploads['basedir']), '/');
+    }
+
+    /**
+     * @param string $attached_file _wp_attached_file value.
+     * @param mixed  $meta_value    Raw _wp_attachment_metadata value.
+     * @param mixed  $backup_value  Raw _wp_attachment_backup_sizes value.
+     * @return string[]
+     */
+    private function relative_paths_for_attachment_row($attached_file, $meta_value, $backup_value = '') {
+        $paths = [];
+        $attached_file = $this->normalize_relative_upload_path($attached_file);
+        if ($attached_file !== '') {
+            $paths[] = $attached_file;
+        }
+        $meta = $this->decode_attachment_meta($meta_value);
+        $base = $attached_file;
+        if (is_array($meta) && !empty($meta['file']) && is_string($meta['file'])) {
+            $file = $this->normalize_relative_upload_path($meta['file']);
+            if ($file !== '') {
+                $paths[] = $file;
+                $base = $file;
+            }
+        }
+        $dir = ($base !== '' && strpos($base, '/') !== false) ? dirname($base) : '';
+        if ($dir === '.') {
+            $dir = '';
+        }
+        if (is_array($meta) && !empty($meta['original_image']) && is_string($meta['original_image'])) {
+            $paths[] = $this->join_upload_dir($dir, $meta['original_image']);
+        }
+        if (is_array($meta) && !empty($meta['sizes']) && is_array($meta['sizes'])) {
+            foreach ($meta['sizes'] as $size) {
+                if (is_array($size) && !empty($size['file']) && is_string($size['file'])) {
+                    $paths[] = $this->join_upload_dir($dir, $size['file']);
+                }
+            }
+        }
+        $backup = $this->decode_attachment_meta($backup_value);
+        if (is_array($backup)) {
+            foreach ($backup as $size) {
+                if (is_array($size) && !empty($size['file']) && is_string($size['file'])) {
+                    $paths[] = $this->join_upload_dir($dir, $size['file']);
+                }
+            }
+        }
+        $out = [];
+        foreach ($paths as $path) {
+            $path = $this->normalize_relative_upload_path($path);
+            if ($path !== '') {
+                $out[] = $path;
+            }
+        }
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * @param mixed $value Meta value.
+     * @return array|null
+     */
+    private function decode_attachment_meta($value) {
+        if (is_array($value)) {
+            return $value;
+        }
+        if (!is_string($value) || $value === '') {
+            return null;
+        }
+        $data = function_exists('maybe_unserialize') ? maybe_unserialize($value) : @unserialize($value);
+        return is_array($data) ? $data : null;
+    }
+
+    /**
+     * @param string $dir  Directory relative to uploads.
+     * @param string $file File name or relative path.
+     * @return string
+     */
+    private function join_upload_dir($dir, $file) {
+        $file = $this->normalize_relative_upload_path($file);
+        if ($file === '') {
+            return '';
+        }
+        if ($dir === '' || strpos($file, '/') !== false) {
+            return $file;
+        }
+        return $dir . '/' . $file;
+    }
+
+    /**
+     * @param string $path Upload path.
+     * @return string
+     */
+    private function normalize_relative_upload_path($path) {
+        if (!is_string($path)) {
+            return '';
+        }
+        $path = str_replace('\\', '/', trim($path));
+        return ltrim($path, '/');
     }
 
     // ─── Utility ──────────────────────────────────────────────────────
@@ -921,5 +1127,31 @@ class OLIMC_Scanner {
 
         $this->path_cache[$clean] = $id ? (int) $id : 0;
         return $this->path_cache[$clean];
+    }
+
+    /**
+     * LIKE pattern for the current upload location, or null when it is unknown.
+     *
+     * @return string|null
+     */
+    private function upload_content_like() {
+        global $wpdb;
+        $fragment = OLIMC_Media_Usage_Parser::upload_search_fragment();
+        if ($fragment === '') {
+            return null;
+        }
+        return '%' . $wpdb->esc_like($fragment) . '%';
+    }
+
+    /**
+     * @param string $text Text that may cite an upload URL or path.
+     */
+    private function merge_upload_paths_from_text($text) {
+        foreach (OLIMC_Media_Usage_Parser::relative_upload_paths($text) as $path) {
+            $id = $this->find_attachment_by_path($path);
+            if ($id) {
+                $this->used_ids[] = $id;
+            }
+        }
     }
 }

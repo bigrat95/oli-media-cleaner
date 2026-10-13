@@ -19,6 +19,27 @@
             return $('<div>').text(text == null ? '' : text).html();
         },
 
+        confirmWithPreview: function(message, $rows) {
+            var lines = [];
+            if ($rows && $rows.length) {
+                $rows.each(function() {
+                    var $row = $(this).closest('tr');
+                    var name = $row.data('filename') || $row.find('.description').first().text() || $row.find('strong').first().text();
+                    if (name) {
+                        lines.push('• ' + name);
+                    }
+                });
+            }
+            var body = message;
+            if (lines.length) {
+                body += '\n\n' + this.str('confirm_preview_intro') + '\n' + lines.slice(0, 8).join('\n');
+                if (lines.length > 8) {
+                    body += '\n… +' + (lines.length - 8);
+                }
+            }
+            return window.confirm(body);
+        },
+
         format: function(template) {
             var args = Array.prototype.slice.call(arguments, 1);
             return String(template).replace(/%(\d+)\$[sd]/g, function(_, n) {
@@ -99,15 +120,17 @@
             // Single actions
             $(document).on('click', '.olimc-trash-btn', function() {
                 var id = $(this).data('id');
-                if (confirm(self.str('confirm_trash'))) {
-                    self.trashSingle(id, $(this).closest('tr'));
+                var $row = $(this).closest('tr');
+                if (self.confirmWithPreview(self.str('confirm_trash'), $row)) {
+                    self.trashSingle(id, $row);
                 }
             });
 
             $(document).on('click', '.olimc-delete-btn', function() {
                 var id = $(this).data('id');
-                if (confirm(self.str('confirm_delete'))) {
-                    self.deleteSingle(id, $(this).closest('tr'));
+                var $row = $(this).closest('tr');
+                if (self.confirmWithPreview(self.str('confirm_delete'), $row)) {
+                    self.deleteSingle(id, $row);
                 }
             });
 
@@ -130,7 +153,8 @@
             $('#olimc-bulk-trash-btn').on('click', function() {
                 var ids = self.getSelectedIds();
                 if (!ids.length) { self.toast(self.str('no_selection'), 'info'); return; }
-                if (confirm(self.str('confirm_bulk_trash'))) {
+                var $rows = $('.olimc-item-cb:checked').closest('tr');
+                if (self.confirmWithPreview(self.str('confirm_bulk_trash'), $rows)) {
                     self.trashBulk(ids);
                 }
             });
@@ -138,7 +162,8 @@
             $('#olimc-bulk-delete-btn').on('click', function() {
                 var ids = self.getSelectedIds();
                 if (!ids.length) { self.toast(self.str('no_selection'), 'info'); return; }
-                if (confirm(self.str('confirm_bulk_delete'))) {
+                var $rows = $('.olimc-item-cb:checked').closest('tr');
+                if (self.confirmWithPreview(self.str('confirm_bulk_delete'), $rows)) {
                     self.deleteBulk(ids);
                 }
             });
@@ -170,7 +195,8 @@
 
             // Trash All
             $('#olimc-trash-all-btn').on('click', function() {
-                if (!confirm(self.str('confirm_trash_all'))) return;
+                var $sample = $('#olimc-results table tbody tr').slice(0, 8);
+                if (!self.confirmWithPreview(self.str('confirm_trash_all'), $sample)) return;
                 self.trashAll();
             });
 
@@ -315,9 +341,17 @@
                     return;
                 }
 
-                var pct = Math.min(100, Math.round((res.data.processed / total) * 100));
+                var pct = (typeof res.data.percent === 'number')
+                    ? res.data.percent
+                    : (total > 0 ? Math.min(100, Math.round((res.data.processed / total) * 100)) : 0);
                 $fill.css('width', pct + '%');
-                $text.text(self.format(self.str('unused_found_progress'), pct, res.data.unused_found));
+                if (res.data.done) {
+                    $text.text(self.format(self.str('unused_found_progress'), pct, res.data.unused_found));
+                } else if (res.data.message) {
+                    $text.text(pct + '% — ' + res.data.message);
+                } else {
+                    $text.text(self.format(self.str('unused_found_progress'), pct, res.data.unused_found));
+                }
 
                 if (res.data.done) {
                     $fill.css('width', '100%');

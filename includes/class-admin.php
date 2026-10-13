@@ -35,6 +35,12 @@ class OLIMC_Admin {
 
         // Cron hook
         add_action('olimc_scheduled_cleanup', [__CLASS__, 'run_scheduled_cleanup']);
+
+        // Any deletion path (Media Library, wp_scheduled_delete, this plugin).
+        add_filter('pre_delete_attachment', [__CLASS__, 'pre_delete_attachment'], 0, 3);
+        add_filter('pre_trash_post', [__CLASS__, 'pre_trash_post'], 0, 3);
+        add_filter('wp_delete_file', [__CLASS__, 'preserve_shared_upload_file'], 100);
+        add_action('delete_attachment', [__CLASS__, 'on_delete_attachment'], 0);
     }
 
     /**
@@ -60,6 +66,7 @@ class OLIMC_Admin {
         delete_option('olimc_scan_results');
         delete_option('olimc_scan_used_ids');
         delete_option('olimc_scan_date');
+        self::delete_scan_runtime_options();
         wp_clear_scheduled_hook('olimc_scheduled_cleanup');
     }
 
@@ -193,12 +200,13 @@ class OLIMC_Admin {
                 'scanning'               => __('Scanning...', 'oli-media-cleaner'),
                 'preparing'              => __('Analyzing your site… this can take a moment.', 'oli-media-cleaner'),
                 'scan_complete'          => __('Scan complete!', 'oli-media-cleaner'),
-                'confirm_trash'          => __('Trash this file?', 'oli-media-cleaner'),
-                'confirm_delete'         => __('Permanently delete this file? This cannot be undone.', 'oli-media-cleaner'),
-                'confirm_bulk_trash'     => __('Trash all selected files?', 'oli-media-cleaner'),
+                'confirm_trash'          => __('Move this file to the Media Trash? You can restore it from the Trash tab before permanently deleting.', 'oli-media-cleaner'),
+                'confirm_delete'         => __('Permanently delete this file? This cannot be undone. Consider a backup first.', 'oli-media-cleaner'),
+                'confirm_bulk_trash'     => __('Move the selected files to the Media Trash? You can restore them from the Trash tab before permanently deleting.', 'oli-media-cleaner'),
                 'confirm_bulk_delete'    => __('Permanently delete the selected files? This cannot be undone. Consider a backup first.', 'oli-media-cleaner'),
+                'confirm_preview_intro'  => __('You are about to affect:', 'oli-media-cleaner'),
                 'no_selection'           => __('No files selected.', 'oli-media-cleaner'),
-                'confirm_trash_all'      => __('Trash ALL unused images? This will process all pages in batches.', 'oli-media-cleaner'),
+                'confirm_trash_all'      => __('Move ALL unused media to the Media Trash in batches? Review the list first. You can restore from the Trash tab before permanently deleting.', 'oli-media-cleaner'),
                 'confirm_empty_trash'    => __('WARNING: This permanently deletes ALL files in the trash. This cannot be undone. Back up your site (or at least wp-content/uploads) before continuing. Empty the trash now?', 'oli-media-cleaner'),
                 'confirm_remove_whitelist' => __('Remove selected items from whitelist?', 'oli-media-cleaner'),
                 'confirm_remove_whitelist_all' => __('Remove ALL items from the whitelist? They will appear again as unused on the next scan.', 'oli-media-cleaner'),
@@ -360,7 +368,7 @@ class OLIMC_Admin {
             </div>
 
             <div class="postbox" style="margin-top:30px;">
-                <div class="postbox-header"><h2 style="padding:8px 12px;margin:0;"><?php esc_html_e('Scheduled Auto-Cleanup', 'oli-media-cleaner'); ?></h2></div>
+                <div class="postbox-header"><h2 style="padding:8px 12px;margin:0;"><?php esc_html_e('Scheduled Scan', 'oli-media-cleaner'); ?></h2></div>
                 <div class="inside">
                     <?php
                     $cron_enabled = get_option('olimc_cron_enabled', false);
@@ -369,11 +377,11 @@ class OLIMC_Admin {
                     ?>
                     <table class="form-table">
                         <tr>
-                            <th><?php esc_html_e('Enable Auto-Cleanup', 'oli-media-cleaner'); ?></th>
+                            <th><?php esc_html_e('Enable Scheduled Scan', 'oli-media-cleaner'); ?></th>
                             <td>
                                 <label>
                                     <input type="checkbox" id="olimc-cron-enabled" <?php checked($cron_enabled); ?>>
-                                    <?php esc_html_e('Automatically scan and trash unused images on a schedule', 'oli-media-cleaner'); ?>
+                                    <?php esc_html_e('Automatically scan for unused images on a schedule (results only — nothing is deleted without your confirmation in the admin)', 'oli-media-cleaner'); ?>
                                 </label>
                             </td>
                         </tr>
@@ -635,7 +643,8 @@ class OLIMC_Admin {
             $thumb = self::get_thumb_html($item);
             $edit_url = admin_url("post.php?post={$id}&action=edit");
 
-            echo '<tr data-id="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '">';
+            $basename = wp_basename( $item['url'] ?? '' );
+            echo '<tr data-id="' . esc_attr( $id ) . '" data-size="' . esc_attr( $item['file_size'] ) . '" data-filename="' . esc_attr( $basename ) . '">';
             echo '<th class="check-column"><input type="checkbox" class="olimc-item-cb" value="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '"></th>';
             echo '<td>' . wp_kses_post( $thumb ) . '</td>';
             echo '<td><strong>' . esc_html($item['title']) . '</strong><br><span class="description">' . esc_html(wp_basename($item['url'] ?? '')) . '</span></td>';
@@ -694,82 +703,95 @@ class OLIMC_Admin {
     }
 
     /**
-     * Step 1: Start scan — collect used IDs (heavy query, done once).
+     * Step 1: Start a resumable scan. Does not decide unused media yet.
      */
     public static function ajax_start_scan() {
         self::verify_request();
 
-        $scanner = new OLIMC_Scanner();
-        $used_ids = $scanner->collect_used_ids();
-        $total = $scanner->get_total_attachment_count();
+        if (!OLIMC_Acf_Meta_Scanner::acquire_lock('ajax')) {
+            wp_send_json_error(__('Another scan is already running. No media was marked unused.', 'oli-media-cleaner'));
+        }
 
-        // Store used IDs for batch processing
-        update_option('olimc_scan_used_ids', $used_ids, false);
-        // Clear old results
-        delete_option('olimc_scan_results');
+        // Drop the legacy shared blob. Leave the cron owner's state alone.
+        delete_option('olimc_scan_state');
+        self::clear_owner_scan('ajax');
+
+        $scanner = new OLIMC_Scanner();
+        $engine  = new OLIMC_Acf_Meta_Scanner($scanner);
+        $state   = $engine->initial_state();
+
+        // Until the scan finishes cleanly, nothing is unused.
+        update_option('olimc_scan_results', [], false);
+        delete_option('olimc_scan_used_ids');
+        self::persist_scan_progress('ajax', $state);
+
+        if ($state['phase'] === 'failed') {
+            self::abort_owner_scan('ajax');
+            wp_send_json_error(__('Scan could not start. No media was marked unused.', 'oli-media-cleaner'));
+        }
 
         wp_send_json_success([
-            'total'    => $total,
-            'used'     => count($used_ids),
-            /* translators: %1$d: number of used media, %2$d: total attachments */
-            'message'  => sprintf(__('Found %1$d used media. Scanning %2$d total attachments...', 'oli-media-cleaner'), count($used_ids), $total),
+            'total'   => $scanner->get_total_attachment_count(),
+            'percent' => 1,
+            'phase'   => $state['phase'],
+            'message' => __('Analyzing media usage…', 'oli-media-cleaner'),
         ]);
     }
 
     /**
-     * Step 2: Process a batch of attachments — check if unused.
+     * Step 2: Continue the resumable scan for a short time budget.
      */
     public static function ajax_scan_batch() {
         self::verify_request();
 
-        $offset = (int) ($_POST['offset'] ?? 0);
-        $batch_size = 50;
-
-        $scanner = new OLIMC_Scanner();
-        $used_ids = get_option('olimc_scan_used_ids', []);
-        $whitelist = get_option('olimc_whitelist', []);
-
-        global $wpdb;
-        $attachment_ids = $wpdb->get_col($wpdb->prepare(
-            "SELECT ID FROM {$wpdb->posts}
-             WHERE post_type = 'attachment'
-             AND post_status != 'trash'
-             ORDER BY ID ASC
-             LIMIT %d OFFSET %d",
-            $batch_size, $offset
-        ));
-
-        $unused_batch = [];
-        foreach ($attachment_ids as $id) {
-            $id = (int) $id;
-            if (!in_array($id, $used_ids, true) && !in_array($id, $whitelist, true)) {
-                $info = $scanner->get_attachment_info($id);
-                if ($info) {
-                    $unused_batch[] = $info;
-                }
-            }
+        if (!OLIMC_Acf_Meta_Scanner::acquire_lock('ajax')) {
+            wp_send_json_error(__('Another scan is already running. No media was marked unused.', 'oli-media-cleaner'));
         }
 
-        // Append to stored results
-        $existing = get_option('olimc_scan_results', []);
-        $existing = array_merge($existing, $unused_batch);
-        update_option('olimc_scan_results', $existing, false);
+        $state = get_option(OLIMC_Acf_Meta_Scanner::state_option_key('ajax'), []);
+        if (!is_array($state) || empty($state['phase'])) {
+            self::abort_owner_scan('ajax');
+            wp_send_json_error(__('Scan state was lost. No media was marked unused.', 'oli-media-cleaner'));
+        }
 
-        $processed = $offset + count($attachment_ids);
-        $total = $scanner->get_total_attachment_count();
-        $done = count($attachment_ids) < $batch_size;
+        $scanner = new OLIMC_Scanner();
+        $engine  = new OLIMC_Acf_Meta_Scanner($scanner);
+        $state   = $engine->step($state, 1500);
+        $total   = $scanner->get_total_attachment_count();
 
+        if ($state['phase'] === 'failed' || !empty($state['error'])) {
+            self::abort_owner_scan('ajax');
+            wp_send_json_error(__('Scan failed before it finished. No media was marked unused.', 'oli-media-cleaner'));
+        }
+
+        self::persist_scan_progress('ajax', $state);
+        $done = OLIMC_Acf_Meta_Scanner::may_mark_unused($state);
         if ($done) {
+            $pending = get_option(OLIMC_Acf_Meta_Scanner::pending_option_key('ajax'), []);
+            if (!is_array($pending)) {
+                $pending = [];
+            }
+            update_option('olimc_scan_results', $pending, false);
             update_option('olimc_scan_date', current_time('mysql'), false);
-            // Cleanup temp
-            delete_option('olimc_scan_used_ids');
+            self::clear_owner_scan('ajax');
+            OLIMC_Acf_Meta_Scanner::release_lock('ajax');
+            $unused_found = count($pending);
+        } else {
+            // Keep the public unused list empty while the scan is still running.
+            update_option('olimc_scan_results', [], false);
+            $unused_found = 0;
         }
 
         wp_send_json_success([
-            'processed'    => $processed,
+            'processed'    => (int) $state['cursor'],
             'total'        => $total,
-            'unused_found' => count($existing),
+            'unused_found' => $unused_found,
             'done'         => $done,
+            'percent'      => $done ? 100 : $engine->percent($state),
+            'phase'        => $state['phase'],
+            'message'      => $done
+                ? __('Scan complete.', 'oli-media-cleaner')
+                : __('Scanning media usage…', 'oli-media-cleaner'),
         ]);
     }
 
@@ -984,6 +1006,132 @@ class OLIMC_Admin {
     }
 
     /**
+     * Shared files, or an unknown index, must not be deleted or trashed.
+     *
+     * @param int $post_id Attachment ID.
+     * @return bool
+     */
+    public static function must_keep_attachment_files($post_id) {
+        $post_id = (int) $post_id;
+        if ($post_id <= 0) {
+            return false;
+        }
+        $shared = (new OLIMC_Scanner())->shared_relative_upload_paths($post_id);
+        return $shared === null || $shared !== [];
+    }
+
+    /**
+     * Stop wp_delete_attachment before delete_attachment (Imagify) and file removal.
+     *
+     * @param mixed $check        Previous decision.
+     * @param mixed $post         Post object.
+     * @param bool  $force_delete Unused. Present so the filter receives the core arguments.
+     * @return mixed
+     */
+    public static function pre_delete_attachment($check, $post, $force_delete = false) {
+        unset($force_delete);
+        if (null !== $check) {
+            return $check;
+        }
+        if (!is_object($post) || (isset($post->post_type) && $post->post_type !== 'attachment')) {
+            return null;
+        }
+        $post_id = isset($post->ID) ? (int) $post->ID : 0;
+        if (self::must_keep_attachment_files($post_id)) {
+            return false;
+        }
+        return null;
+    }
+
+    /**
+     * Refuse to trash an attachment whose files are still used elsewhere.
+     *
+     * With EMPTY_TRASH_DAYS at 0, trashing deletes immediately. Otherwise WordPress
+     * permanently deletes the trash after 30 days, outside this plugin.
+     *
+     * @param mixed $check Previous decision.
+     * @param mixed $post  Post object.
+     * @param mixed $previous_status Unused. Present so the filter receives the core arguments.
+     * @return mixed
+     */
+    public static function pre_trash_post($check, $post, $previous_status = '') {
+        unset($previous_status);
+        if (null !== $check) {
+            return $check;
+        }
+        if (!is_object($post) || (isset($post->post_type) && $post->post_type !== 'attachment')) {
+            return null;
+        }
+        $post_id = isset($post->ID) ? (int) $post->ID : 0;
+        if (self::must_keep_attachment_files($post_id)) {
+            return false;
+        }
+        return null;
+    }
+
+    /**
+     * Keep a file on disk when another attachment still references it.
+     *
+     * Also keeps a .webp or .avif sibling of a shared file. A failed lookup
+     * keeps the file. Returning an empty string makes wp_delete_file skip unlink.
+     *
+     * @param string $file Absolute path.
+     * @return string
+     */
+    public static function preserve_shared_upload_file($file) {
+        if (!is_string($file) || $file === '') {
+            return $file;
+        }
+        $verdict = (new OLIMC_Scanner())->absolute_file_is_shared($file);
+        if ($verdict === false) {
+            return $file;
+        }
+        return '';
+    }
+
+    /**
+     * If deletion still reaches delete_attachment, drop later callbacks.
+     *
+     * Imagify removes WebP, AVIF, and its backup with WP_Filesystem, which
+     * does not call wp_delete_file. Priority 0 runs before those callbacks.
+     *
+     * @param int $post_id Attachment ID.
+     */
+    public static function on_delete_attachment($post_id) {
+        if (!self::must_keep_attachment_files($post_id)) {
+            return;
+        }
+        if (!isset($GLOBALS['wp_filter']['delete_attachment'])) {
+            return;
+        }
+        $hook = $GLOBALS['wp_filter']['delete_attachment'];
+        $callbacks = (is_object($hook) && isset($hook->callbacks) && is_array($hook->callbacks)) ? $hook->callbacks : null;
+        if (!is_array($callbacks)) {
+            return;
+        }
+        foreach ($callbacks as $priority => $group) {
+            if ((int) $priority <= 0 || !is_array($group)) {
+                continue;
+            }
+            foreach ($group as $callback) {
+                if (is_array($callback) && isset($callback['function'])) {
+                    remove_action('delete_attachment', $callback['function'], (int) $priority);
+                }
+            }
+        }
+    }
+
+    /**
+     * Permanently delete one attachment. Shared files are refused by pre_delete_attachment.
+     *
+     * @param int $post_id Attachment ID.
+     * @return mixed Result of wp_delete_attachment().
+     */
+    private static function delete_attachment_preserve_shared_files($post_id) {
+        return wp_delete_attachment((int) $post_id, true);
+    }
+
+    /**
      * Permanently delete a single file.
      */
     public static function ajax_delete_single() {
@@ -992,7 +1140,7 @@ class OLIMC_Admin {
         $post_id = (int) ($_POST['post_id'] ?? 0);
         if (!$post_id) wp_send_json_error(__('Invalid ID.', 'oli-media-cleaner'));
 
-        $result = wp_delete_attachment($post_id, true);
+        $result = self::delete_attachment_preserve_shared_files($post_id);
         if ($result) {
             self::remove_from_scan_results($post_id);
             wp_send_json_success(['message' => __('File permanently deleted.', 'oli-media-cleaner')]);
@@ -1009,7 +1157,7 @@ class OLIMC_Admin {
         $ids = array_map('intval', $_POST['ids'] ?? []);
         $deleted = 0;
         foreach ($ids as $id) {
-            if (wp_delete_attachment($id, true)) {
+            if (self::delete_attachment_preserve_shared_files($id)) {
                 self::remove_from_scan_results($id);
                 $deleted++;
             }
@@ -1217,7 +1365,7 @@ class OLIMC_Admin {
         $deleted = 0;
 
         foreach ($trashed_ids as $id) {
-            if (wp_delete_attachment((int) $id, true)) {
+            if (self::delete_attachment_preserve_shared_files((int) $id)) {
                 $deleted++;
             }
         }
@@ -1308,56 +1456,120 @@ class OLIMC_Admin {
         wp_send_json_success([
             'message'  => $enabled
                 /* translators: %1$s: frequency label, %2$s: next run date */
-                ? sprintf(__('Auto-cleanup enabled (%1$s). Next run: %2$s', 'oli-media-cleaner'), $frequency_label, $next_run)
-                : __('Auto-cleanup disabled.', 'oli-media-cleaner'),
+                ? sprintf(__('Scheduled scan enabled (%1$s). Next run: %2$s', 'oli-media-cleaner'), $frequency_label, $next_run)
+                : __('Scheduled scan disabled.', 'oli-media-cleaner'),
             'next_run' => $next_run ?: __('Not scheduled', 'oli-media-cleaner'),
         ]);
     }
 
     /**
-     * Cron callback: scan + trash unused images.
+     * Cron callback: resume the scan only. Never trashes or deletes media.
      */
     public static function run_scheduled_cleanup() {
-        $scanner = new OLIMC_Scanner();
-        $used_ids = $scanner->collect_used_ids();
-        $whitelist = get_option('olimc_whitelist', []);
-        $total = $scanner->get_total_attachment_count();
-
-        global $wpdb;
-        $batch_size = 100;
-        $offset = 0;
-        $all_unused = [];
-
-        while (true) {
-            $attachment_ids = $wpdb->get_col($wpdb->prepare(
-                "SELECT ID FROM {$wpdb->posts}
-                 WHERE post_type = 'attachment'
-                 AND post_status != 'trash'
-                 ORDER BY ID ASC
-                 LIMIT %d OFFSET %d",
-                $batch_size, $offset
-            ));
-
-            if (empty($attachment_ids)) break;
-
-            foreach ($attachment_ids as $id) {
-                $id = (int) $id;
-                if (!in_array($id, $used_ids, true) && !in_array($id, $whitelist, true)) {
-                    $info = $scanner->get_attachment_info($id);
-                    if ($info) {
-                        $all_unused[] = $info;
-                        wp_trash_post($id);
-                    }
-                }
-            }
-
-            $offset += $batch_size;
-            if (count($attachment_ids) < $batch_size) break;
+        if (!OLIMC_Acf_Meta_Scanner::acquire_lock('cron')) {
+            self::reschedule_scan_soon();
+            return;
         }
 
-        // Update scan results and date
-        update_option('olimc_scan_results', [], false);
+        $state_key = OLIMC_Acf_Meta_Scanner::state_option_key('cron');
+        $state     = get_option($state_key, []);
+        $scanner   = new OLIMC_Scanner();
+        $engine    = new OLIMC_Acf_Meta_Scanner($scanner);
+
+        if (!is_array($state) || empty($state['phase']) || $state['phase'] === 'done' || $state['phase'] === 'failed') {
+            delete_option('olimc_scan_state');
+            self::clear_owner_scan('cron');
+            $state = $engine->initial_state();
+            update_option('olimc_scan_results', [], false);
+        }
+
+        $deadline = microtime(true) + 20;
+        while (microtime(true) < $deadline && !in_array($state['phase'], ['done', 'failed'], true)) {
+            $state = $engine->step($state, 2000);
+            self::persist_scan_progress('cron', $state);
+        }
+
+        if ($state['phase'] === 'failed' || !empty($state['error'])) {
+            self::abort_owner_scan('cron');
+            return;
+        }
+
+        if (!OLIMC_Acf_Meta_Scanner::may_mark_unused($state)) {
+            self::persist_scan_progress('cron', $state);
+            self::reschedule_scan_soon();
+            return;
+        }
+
+        $pending = get_option(OLIMC_Acf_Meta_Scanner::pending_option_key('cron'), []);
+        if (!is_array($pending)) {
+            $pending = [];
+        }
+        update_option('olimc_scan_results', $pending, false);
         update_option('olimc_scan_date', current_time('mysql'), false);
+        self::clear_owner_scan('cron');
+        OLIMC_Acf_Meta_Scanner::release_lock('cron');
+    }
+
+    /**
+     * Merge this step's new unused rows into the pending option, then save progress without them.
+     *
+     * @param string $owner ajax|cron.
+     * @param array  $state Scan state. pending_delta is removed before the option is written.
+     */
+    private static function persist_scan_progress($owner, array &$state) {
+        $delta = isset($state['pending_delta']) && is_array($state['pending_delta']) ? $state['pending_delta'] : [];
+        unset($state['pending_delta'], $state['pending_unused']);
+        if ($delta !== []) {
+            $pending_key = OLIMC_Acf_Meta_Scanner::pending_option_key($owner);
+            $pending     = get_option($pending_key, []);
+            if (!is_array($pending)) {
+                $pending = [];
+            }
+            update_option($pending_key, array_merge($pending, $delta), false);
+        }
+        update_option(OLIMC_Acf_Meta_Scanner::state_option_key($owner), $state, false);
+        OLIMC_Acf_Meta_Scanner::touch_lock($owner);
+    }
+
+    /**
+     * @param string $owner ajax|cron.
+     */
+    private static function clear_owner_scan($owner) {
+        delete_option(OLIMC_Acf_Meta_Scanner::state_option_key($owner));
+        delete_option(OLIMC_Acf_Meta_Scanner::pending_option_key($owner));
+    }
+
+    /**
+     * Failed or abandoned scan: publish nothing, and only clear this owner's options.
+     *
+     * @param string $owner ajax|cron.
+     */
+    private static function abort_owner_scan($owner) {
+        update_option('olimc_scan_results', [], false);
+        self::clear_owner_scan($owner);
+        OLIMC_Acf_Meta_Scanner::release_lock($owner);
+    }
+
+    /**
+     * Ask cron to continue soon, without replacing a run that is already due shortly.
+     */
+    private static function reschedule_scan_soon() {
+        $next = wp_next_scheduled('olimc_scheduled_cleanup');
+        if (!$next || $next > time() + 120) {
+            wp_schedule_single_event(time() + 30, 'olimc_scheduled_cleanup');
+        }
+    }
+
+    /**
+     * Legacy shared state plus the per-owner progress, pending list, and lock.
+     */
+    private static function delete_scan_runtime_options() {
+        delete_option('olimc_scan_state');
+        delete_option(OLIMC_Acf_Meta_Scanner::state_option_key('ajax'));
+        delete_option(OLIMC_Acf_Meta_Scanner::state_option_key('cron'));
+        delete_option(OLIMC_Acf_Meta_Scanner::pending_option_key('ajax'));
+        delete_option(OLIMC_Acf_Meta_Scanner::pending_option_key('cron'));
+        delete_option(OLIMC_Acf_Meta_Scanner::LOCK_OPTION);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────
