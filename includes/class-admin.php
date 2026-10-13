@@ -59,8 +59,8 @@ class OLIMC_Admin {
     public static function deactivate() {
         delete_option('olimc_scan_results');
         delete_option('olimc_scan_used_ids');
-        delete_option('olimc_scan_state');
         delete_option('olimc_scan_date');
+        self::delete_scan_runtime_options();
         wp_clear_scheduled_hook('olimc_scheduled_cleanup');
     }
 
@@ -702,6 +702,14 @@ class OLIMC_Admin {
     public static function ajax_start_scan() {
         self::verify_request();
 
+        if (!OLIMC_Acf_Meta_Scanner::acquire_lock('ajax')) {
+            wp_send_json_error(__('Another scan is already running. No media was marked unused.', 'oli-media-cleaner'));
+        }
+
+        // Drop the legacy shared blob. Leave the cron owner's state alone.
+        delete_option('olimc_scan_state');
+        self::clear_owner_scan('ajax');
+
         $scanner = new OLIMC_Scanner();
         $engine  = new OLIMC_Acf_Meta_Scanner($scanner);
         $state   = $engine->initial_state();
@@ -709,9 +717,10 @@ class OLIMC_Admin {
         // Until the scan finishes cleanly, nothing is unused.
         update_option('olimc_scan_results', [], false);
         delete_option('olimc_scan_used_ids');
-        update_option('olimc_scan_state', $state, false);
+        self::persist_scan_progress('ajax', $state);
 
         if ($state['phase'] === 'failed') {
+            self::abort_owner_scan('ajax');
             wp_send_json_error(__('Scan could not start. No media was marked unused.', 'oli-media-cleaner'));
         }
 
@@ -729,9 +738,13 @@ class OLIMC_Admin {
     public static function ajax_scan_batch() {
         self::verify_request();
 
-        $state = get_option('olimc_scan_state', []);
+        if (!OLIMC_Acf_Meta_Scanner::acquire_lock('ajax')) {
+            wp_send_json_error(__('Another scan is already running. No media was marked unused.', 'oli-media-cleaner'));
+        }
+
+        $state = get_option(OLIMC_Acf_Meta_Scanner::state_option_key('ajax'), []);
         if (!is_array($state) || empty($state['phase'])) {
-            update_option('olimc_scan_results', [], false);
+            self::abort_owner_scan('ajax');
             wp_send_json_error(__('Scan state was lost. No media was marked unused.', 'oli-media-cleaner'));
         }
 
@@ -741,20 +754,23 @@ class OLIMC_Admin {
         $total   = $scanner->get_total_attachment_count();
 
         if ($state['phase'] === 'failed' || !empty($state['error'])) {
-            update_option('olimc_scan_results', [], false);
-            delete_option('olimc_scan_state');
+            self::abort_owner_scan('ajax');
             wp_send_json_error(__('Scan failed before it finished. No media was marked unused.', 'oli-media-cleaner'));
         }
 
+        self::persist_scan_progress('ajax', $state);
         $done = OLIMC_Acf_Meta_Scanner::may_mark_unused($state);
         if ($done) {
-            $pending = isset($state['pending_unused']) && is_array($state['pending_unused']) ? $state['pending_unused'] : [];
+            $pending = get_option(OLIMC_Acf_Meta_Scanner::pending_option_key('ajax'), []);
+            if (!is_array($pending)) {
+                $pending = [];
+            }
             update_option('olimc_scan_results', $pending, false);
             update_option('olimc_scan_date', current_time('mysql'), false);
-            delete_option('olimc_scan_state');
+            self::clear_owner_scan('ajax');
+            OLIMC_Acf_Meta_Scanner::release_lock('ajax');
             $unused_found = count($pending);
         } else {
-            update_option('olimc_scan_state', $state, false);
             // Keep the public unused list empty while the scan is still running.
             update_option('olimc_scan_results', [], false);
             $unused_found = 0;
@@ -1318,11 +1334,19 @@ class OLIMC_Admin {
      * Cron callback: resume the scan only. Never trashes or deletes media.
      */
     public static function run_scheduled_cleanup() {
-        $state = get_option('olimc_scan_state', []);
-        $scanner = new OLIMC_Scanner();
-        $engine  = new OLIMC_Acf_Meta_Scanner($scanner);
+        if (!OLIMC_Acf_Meta_Scanner::acquire_lock('cron')) {
+            self::reschedule_scan_soon();
+            return;
+        }
+
+        $state_key = OLIMC_Acf_Meta_Scanner::state_option_key('cron');
+        $state     = get_option($state_key, []);
+        $scanner   = new OLIMC_Scanner();
+        $engine    = new OLIMC_Acf_Meta_Scanner($scanner);
 
         if (!is_array($state) || empty($state['phase']) || $state['phase'] === 'done' || $state['phase'] === 'failed') {
+            delete_option('olimc_scan_state');
+            self::clear_owner_scan('cron');
             $state = $engine->initial_state();
             update_option('olimc_scan_results', [], false);
         }
@@ -1330,27 +1354,90 @@ class OLIMC_Admin {
         $deadline = microtime(true) + 20;
         while (microtime(true) < $deadline && !in_array($state['phase'], ['done', 'failed'], true)) {
             $state = $engine->step($state, 2000);
-            update_option('olimc_scan_state', $state, false);
+            self::persist_scan_progress('cron', $state);
         }
 
-        $incomplete = ( $state['phase'] !== 'done' );
-        if ( $state['phase'] === 'failed' || ! empty( $state['error'] ) || ( $incomplete && ! OLIMC_Acf_Meta_Scanner::may_mark_unused( $state ) ) ) {
-            if ($state['phase'] === 'failed' || !empty($state['error'])) {
-                update_option('olimc_scan_results', [], false);
-                delete_option('olimc_scan_state');
-                return;
-            }
-            $next = wp_next_scheduled('olimc_scheduled_cleanup');
-            if (!$next || $next > time() + 120) {
-                wp_schedule_single_event(time() + 30, 'olimc_scheduled_cleanup');
-            }
+        if ($state['phase'] === 'failed' || !empty($state['error'])) {
+            self::abort_owner_scan('cron');
             return;
         }
 
-        $pending = isset($state['pending_unused']) && is_array($state['pending_unused']) ? $state['pending_unused'] : [];
+        if (!OLIMC_Acf_Meta_Scanner::may_mark_unused($state)) {
+            self::persist_scan_progress('cron', $state);
+            self::reschedule_scan_soon();
+            return;
+        }
+
+        $pending = get_option(OLIMC_Acf_Meta_Scanner::pending_option_key('cron'), []);
+        if (!is_array($pending)) {
+            $pending = [];
+        }
         update_option('olimc_scan_results', $pending, false);
         update_option('olimc_scan_date', current_time('mysql'), false);
+        self::clear_owner_scan('cron');
+        OLIMC_Acf_Meta_Scanner::release_lock('cron');
+    }
+
+    /**
+     * Merge this step's new unused rows into the pending option, then save progress without them.
+     *
+     * @param string $owner ajax|cron.
+     * @param array  $state Scan state. pending_delta is removed before the option is written.
+     */
+    private static function persist_scan_progress($owner, array &$state) {
+        $delta = isset($state['pending_delta']) && is_array($state['pending_delta']) ? $state['pending_delta'] : [];
+        unset($state['pending_delta'], $state['pending_unused']);
+        if ($delta !== []) {
+            $pending_key = OLIMC_Acf_Meta_Scanner::pending_option_key($owner);
+            $pending     = get_option($pending_key, []);
+            if (!is_array($pending)) {
+                $pending = [];
+            }
+            update_option($pending_key, array_merge($pending, $delta), false);
+        }
+        update_option(OLIMC_Acf_Meta_Scanner::state_option_key($owner), $state, false);
+        OLIMC_Acf_Meta_Scanner::touch_lock($owner);
+    }
+
+    /**
+     * @param string $owner ajax|cron.
+     */
+    private static function clear_owner_scan($owner) {
+        delete_option(OLIMC_Acf_Meta_Scanner::state_option_key($owner));
+        delete_option(OLIMC_Acf_Meta_Scanner::pending_option_key($owner));
+    }
+
+    /**
+     * Failed or abandoned scan: publish nothing, and only clear this owner's options.
+     *
+     * @param string $owner ajax|cron.
+     */
+    private static function abort_owner_scan($owner) {
+        update_option('olimc_scan_results', [], false);
+        self::clear_owner_scan($owner);
+        OLIMC_Acf_Meta_Scanner::release_lock($owner);
+    }
+
+    /**
+     * Ask cron to continue soon, without replacing a run that is already due shortly.
+     */
+    private static function reschedule_scan_soon() {
+        $next = wp_next_scheduled('olimc_scheduled_cleanup');
+        if (!$next || $next > time() + 120) {
+            wp_schedule_single_event(time() + 30, 'olimc_scheduled_cleanup');
+        }
+    }
+
+    /**
+     * Legacy shared state plus the per-owner progress, pending list, and lock.
+     */
+    private static function delete_scan_runtime_options() {
         delete_option('olimc_scan_state');
+        delete_option(OLIMC_Acf_Meta_Scanner::state_option_key('ajax'));
+        delete_option(OLIMC_Acf_Meta_Scanner::state_option_key('cron'));
+        delete_option(OLIMC_Acf_Meta_Scanner::pending_option_key('ajax'));
+        delete_option(OLIMC_Acf_Meta_Scanner::pending_option_key('cron'));
+        delete_option(OLIMC_Acf_Meta_Scanner::LOCK_OPTION);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────

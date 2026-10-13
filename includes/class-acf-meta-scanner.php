@@ -12,7 +12,13 @@
  * same indexed lookups.
  *
  * Fallback: if ACF is inactive or groups cannot be resolved, walk meta in
- * primary-key chunks and match attachment IDs in PHP.
+ * primary-key chunks and match attachment IDs in PHP. When ACF is active the
+ * same chunked walk still runs (generic_* phases) so page builders, SEO plugins
+ * and any other meta that stores an ID or upload URL count as used.
+ *
+ * Meta keys are bound with $wpdb->prepare(). Any key WordPress can store is
+ * accepted, including hyphens (highlight-image). Only SQL identifiers such as
+ * column names stay restricted to [A-Za-z0-9_].
  *
  * @package Oli_Media_Cleaner
  */
@@ -26,6 +32,8 @@ class OLIMC_Acf_Meta_Scanner {
 
 	const RANGE_SPAN = 5000;
 	const KEY_CHUNK  = 40;
+	const LOCK_TTL   = 180;
+	const LOCK_OPTION = 'olimc_scan_lock';
 
 	/**
 	 * @var OLIMC_Scanner
@@ -47,6 +55,98 @@ class OLIMC_Acf_Meta_Scanner {
 	 */
 	public static function may_mark_unused( array $state ) {
 		return isset( $state['phase'] ) && $state['phase'] === 'done' && empty( $state['error'] );
+	}
+
+	/**
+	 * Option that stores resumable progress for one owner. AJAX and cron never share it.
+	 *
+	 * @param string $owner ajax|cron.
+	 * @return string
+	 */
+	public static function state_option_key( $owner ) {
+		return $owner === 'cron' ? 'olimc_scan_state_cron' : 'olimc_scan_state_ajax';
+	}
+
+	/**
+	 * Option that accumulates unused-attachment rows for one owner.
+	 *
+	 * Kept out of the progress option so cron does not rewrite the full list every batch.
+	 *
+	 * @param string $owner ajax|cron.
+	 * @return string
+	 */
+	public static function pending_option_key( $owner ) {
+		return $owner === 'cron' ? 'olimc_scan_pending_cron' : 'olimc_scan_pending_ajax';
+	}
+
+	/**
+	 * Take the scan lock, or refresh it when this owner already holds it.
+	 *
+	 * A lock older than LOCK_TTL can be taken over so a closed browser cannot block cron.
+	 *
+	 * @param string $owner ajax|cron.
+	 * @return bool
+	 */
+	public static function acquire_lock( $owner ) {
+		$owner = ( $owner === 'cron' ) ? 'cron' : 'ajax';
+		$now   = time();
+		$lock  = get_option( self::LOCK_OPTION, false );
+		if ( self::lock_blocks( $lock, $owner, $now ) ) {
+			return false;
+		}
+		$payload = [
+			'owner' => $owner,
+			'time'  => $now,
+		];
+		if ( false === $lock ) {
+			if ( add_option( self::LOCK_OPTION, $payload, '', false ) ) {
+				return true;
+			}
+			$lock = get_option( self::LOCK_OPTION, false );
+			if ( self::lock_blocks( $lock, $owner, $now ) ) {
+				return false;
+			}
+		}
+		update_option( self::LOCK_OPTION, $payload, false );
+		return true;
+	}
+
+	/**
+	 * @param string $owner ajax|cron.
+	 */
+	public static function touch_lock( $owner ) {
+		$owner = ( $owner === 'cron' ) ? 'cron' : 'ajax';
+		$lock  = get_option( self::LOCK_OPTION, false );
+		if ( ! is_array( $lock ) || ! isset( $lock['owner'] ) || $lock['owner'] !== $owner ) {
+			return;
+		}
+		$lock['time'] = time();
+		update_option( self::LOCK_OPTION, $lock, false );
+	}
+
+	/**
+	 * @param string $owner ajax|cron.
+	 */
+	public static function release_lock( $owner ) {
+		$owner = ( $owner === 'cron' ) ? 'cron' : 'ajax';
+		$lock  = get_option( self::LOCK_OPTION, false );
+		if ( is_array( $lock ) && isset( $lock['owner'] ) && $lock['owner'] === $owner ) {
+			delete_option( self::LOCK_OPTION );
+		}
+	}
+
+	/**
+	 * @param mixed  $lock  Stored lock.
+	 * @param string $owner ajax|cron.
+	 * @param int    $now   Unix time.
+	 * @return bool
+	 */
+	private static function lock_blocks( $lock, $owner, $now ) {
+		if ( ! is_array( $lock ) || empty( $lock['owner'] ) || $lock['owner'] === $owner ) {
+			return false;
+		}
+		$age = $now - (int) ( isset( $lock['time'] ) ? $lock['time'] : 0 );
+		return $age < self::LOCK_TTL;
 	}
 
 	/**
@@ -76,6 +176,7 @@ class OLIMC_Acf_Meta_Scanner {
 			'discovered_option' => [],
 			'used'              => [],
 			'pending_unused'    => [],
+			'pending_delta'     => [],
 			'max_post'          => $max_post,
 			'max_term'          => $max_term,
 			'max_user'          => $max_user,
@@ -141,7 +242,8 @@ class OLIMC_Acf_Meta_Scanner {
 			return 0;
 		}
 		$frac = 0;
-		if ( strpos( (string) $state['phase'], 'ref_' ) !== false || strpos( (string) $state['phase'], 'fallback_' ) !== false ) {
+		$phase = (string) $state['phase'];
+		if ( strpos( $phase, 'ref_' ) !== false || strpos( $phase, 'fallback_' ) !== false || strpos( $phase, 'generic_' ) !== false ) {
 			$max  = max( 1, (int) $this->range_max_for_phase( $state ) );
 			$frac = min( 1, (int) $state['cursor'] / $max );
 		}
@@ -187,7 +289,19 @@ class OLIMC_Acf_Meta_Scanner {
 				$this->phase_indexed_values( $state, 'user', 'acf_val_option', true );
 				break;
 			case 'acf_val_option':
-				$this->phase_indexed_values( $state, 'option', 'auxiliary', true );
+				$this->phase_indexed_values( $state, 'option', 'generic_post', true );
+				break;
+			case 'generic_post':
+				$this->phase_fallback_range( $state, 'post', 'generic_term' );
+				break;
+			case 'generic_term':
+				$this->phase_fallback_range( $state, 'term', 'generic_user' );
+				break;
+			case 'generic_user':
+				$this->phase_fallback_range( $state, 'user', 'generic_option' );
+				break;
+			case 'generic_option':
+				$this->phase_fallback_range( $state, 'option', 'auxiliary' );
 				break;
 			case 'fallback_post':
 				$this->phase_fallback_range( $state, 'post', 'fallback_term' );
@@ -232,6 +346,10 @@ class OLIMC_Acf_Meta_Scanner {
 				'acf_val_term',
 				'acf_val_user',
 				'acf_val_option',
+				'generic_post',
+				'generic_term',
+				'generic_user',
+				'generic_option',
 				'auxiliary',
 				'classify',
 			];
@@ -268,7 +386,7 @@ class OLIMC_Acf_Meta_Scanner {
 			$keys = $this->value_keys_for_table( $state, $which );
 		}
 
-		$keys = array_values( array_filter( $keys, [ $this, 'is_safe_meta_key' ] ) );
+		$keys = array_values( array_filter( $keys, [ $this, 'is_bindable_meta_key' ] ) );
 		$total = count( $keys );
 		$cursor = (int) $state['cursor'];
 		if ( $cursor >= $total ) {
@@ -336,7 +454,7 @@ class OLIMC_Acf_Meta_Scanner {
 				continue;
 			}
 			$value_key = substr( $meta_key, 1 );
-			if ( $this->is_safe_meta_key( $value_key ) ) {
+			if ( $this->is_bindable_meta_key( $value_key ) ) {
 				$state[ $bucket ][ $value_key ] = 1;
 			}
 		}
@@ -442,7 +560,10 @@ class OLIMC_Acf_Meta_Scanner {
 			}
 			$info = $this->scanner->get_attachment_info( $id );
 			if ( $info ) {
-				$state['pending_unused'][] = $info;
+				if ( ! isset( $state['pending_delta'] ) || ! is_array( $state['pending_delta'] ) ) {
+					$state['pending_delta'] = [];
+				}
+				$state['pending_delta'][] = $info;
 			}
 		}
 
@@ -510,6 +631,7 @@ class OLIMC_Acf_Meta_Scanner {
 		$state['phase']          = 'failed';
 		$state['error']          = $message;
 		$state['pending_unused'] = [];
+		$state['pending_delta']  = [];
 		$state['used']           = [];
 	}
 
@@ -589,7 +711,7 @@ class OLIMC_Acf_Meta_Scanner {
 	 */
 	private function max_id( $table, $id_col ) {
 		global $wpdb;
-		if ( ! is_string( $table ) || $table === '' || ! $this->is_safe_meta_key( $id_col ) ) {
+		if ( ! is_string( $table ) || $table === '' || ! $this->is_safe_identifier( $id_col ) ) {
 			return 0;
 		}
 		$wpdb->last_error = '';
@@ -637,7 +759,7 @@ class OLIMC_Acf_Meta_Scanner {
 	 */
 	private function fetch_reference_rows( array $spec, $lo, $hi, array $field_keys ) {
 		global $wpdb;
-		$field_keys = array_values( array_filter( $field_keys, [ $this, 'is_safe_meta_key' ] ) );
+		$field_keys = array_values( array_filter( $field_keys, [ $this, 'is_bindable_meta_key' ] ) );
 		if ( $field_keys === [] ) {
 			return [];
 		}
@@ -679,10 +801,26 @@ class OLIMC_Acf_Meta_Scanner {
 	}
 
 	/**
-	 * @param string $key Meta key or column.
+	 * Meta keys and ACF field keys are query values, not SQL identifiers.
+	 * WordPress allows hyphens and other characters; prepare() binds them.
+	 *
+	 * @param mixed $key Meta key or field key.
 	 * @return bool
 	 */
-	private function is_safe_meta_key( $key ) {
+	private function is_bindable_meta_key( $key ) {
+		if ( ! is_string( $key ) || $key === '' || strlen( $key ) > 255 ) {
+			return false;
+		}
+		return strpos( $key, "\0" ) === false;
+	}
+
+	/**
+	 * Column names interpolated into SQL. These are chosen by this class, never by meta.
+	 *
+	 * @param string $key Column name.
+	 * @return bool
+	 */
+	private function is_safe_identifier( $key ) {
 		return is_string( $key ) && $key !== '' && (bool) preg_match( '/^[A-Za-z0-9_]+$/', $key );
 	}
 

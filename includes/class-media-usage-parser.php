@@ -13,10 +13,141 @@ defined( 'ABSPATH' ) || exit;
 class OLIMC_Media_Usage_Parser {
 
 	/**
-	 * WordPress core / plugin meta keys whose underscore-prefixed siblings are not ACF field refs.
+	 * Optional marker list for tests. Null uses wp_upload_dir().
 	 *
-	 * @var string[]
+	 * @var string[]|null
 	 */
+	private static $marker_override = null;
+
+	/**
+	 * @param string[]|null $markers Upload base URLs or directories. Null restores wp_upload_dir().
+	 */
+	public static function set_upload_markers( $markers ) {
+		self::$marker_override = is_array( $markers ) ? array_values( $markers ) : null;
+	}
+
+	/**
+	 * Base URL, protocol-less URL, URL path, and basedir for the current site.
+	 *
+	 * Multisite bases that end in /sites/{id} also contribute the network upload root.
+	 * Nothing here is a fixed wp-content path.
+	 *
+	 * @param array $uploads Keys baseurl and basedir, as returned by wp_upload_dir().
+	 * @return string[]
+	 */
+	public static function markers_from_upload_dir( array $uploads ) {
+		$markers = [];
+		foreach ( [ 'baseurl', 'basedir' ] as $key ) {
+			if ( empty( $uploads[ $key ] ) || ! is_string( $uploads[ $key ] ) ) {
+				continue;
+			}
+			$value = rtrim( $uploads[ $key ], "/\\" );
+			if ( $value === '' ) {
+				continue;
+			}
+			$markers[] = $value;
+			if ( $key === 'baseurl' ) {
+				$protocol_less = preg_replace( '#^https?:#', '', $value );
+				if ( is_string( $protocol_less ) && $protocol_less !== '' && $protocol_less !== $value ) {
+					$markers[] = $protocol_less;
+				}
+				$path = parse_url( $value, PHP_URL_PATH );
+				if ( is_string( $path ) && $path !== '' && $path !== '/' ) {
+					$markers[] = rtrim( $path, '/' );
+				}
+			}
+		}
+		foreach ( $markers as $marker ) {
+			if ( preg_match( '#^(.*?)/sites/\d+$#', rtrim( $marker, '/' ), $match ) && $match[1] !== '' ) {
+				$markers[] = $match[1];
+			}
+		}
+		return array_values( array_unique( $markers ) );
+	}
+
+	/**
+	 * @return string[]
+	 */
+	public static function upload_location_markers() {
+		if ( is_array( self::$marker_override ) ) {
+			return self::$marker_override;
+		}
+		if ( ! function_exists( 'wp_upload_dir' ) ) {
+			return [];
+		}
+		$uploads = wp_upload_dir( null, false );
+		if ( ! is_array( $uploads ) ) {
+			return [];
+		}
+		return self::markers_from_upload_dir( $uploads );
+	}
+
+	/**
+	 * Shortest upload path, for a single LIKE that matches http, https, and protocol-less URLs.
+	 *
+	 * @return string
+	 */
+	public static function upload_search_fragment() {
+		$best = '';
+		foreach ( self::upload_location_markers() as $marker ) {
+			$path = $marker;
+			if ( preg_match( '#^https?:#', $marker ) || strpos( $marker, '//' ) === 0 ) {
+				$parsed = parse_url( strpos( $marker, '//' ) === 0 ? 'http:' . $marker : $marker, PHP_URL_PATH );
+				$path   = is_string( $parsed ) ? $parsed : '';
+			}
+			$path = rtrim( (string) $path, "/\\" );
+			if ( $path !== '' && ( $best === '' || strlen( $path ) < strlen( $best ) ) ) {
+				$best = $path;
+			}
+		}
+		return $best;
+	}
+
+	/**
+	 * @param string $text Text that may contain an upload URL or path.
+	 * @return string[] Paths relative to the uploads directory.
+	 */
+	public static function relative_upload_paths( $text ) {
+		if ( ! is_string( $text ) || $text === '' ) {
+			return [];
+		}
+		$markers = self::upload_location_markers();
+		usort(
+			$markers,
+			function ( $left, $right ) {
+				return strlen( (string) $right ) - strlen( (string) $left );
+			}
+		);
+		$found = [];
+		foreach ( $markers as $marker ) {
+			$marker = rtrim( (string) $marker, '/' );
+			if ( $marker === '' ) {
+				continue;
+			}
+			$pattern = '#' . preg_quote( $marker, '#' ) . '/([^\s"\'<>),;}\\\]]+)#';
+			if ( ! preg_match_all( $pattern, $text, $matches ) ) {
+				continue;
+			}
+			foreach ( $matches[1] as $path ) {
+				$path = rawurldecode( (string) $path );
+				$path = strtok( $path, '?#' );
+				$path = ltrim( (string) $path, '/' );
+				if ( $path !== '' ) {
+					$found[] = $path;
+				}
+			}
+		}
+		return array_values( array_unique( $found ) );
+	}
+
+	/**
+	 * @param string $text Text.
+	 * @return bool
+	 */
+	public static function text_references_uploads( $text ) {
+		return self::relative_upload_paths( $text ) !== [];
+	}
+
 	private static $non_acf_reference_keys = [
 		'_thumbnail_id',
 		'_wp_page_template',
@@ -96,8 +227,8 @@ class OLIMC_Media_Usage_Parser {
 			return $found;
 		}
 
-		// URL string return format.
-		if ( strpos( $value, 'wp-content/uploads' ) !== false ) {
+		// URL string return format (site upload base, not a fixed directory).
+		if ( self::text_references_uploads( $value ) ) {
 			$found = array_merge( $found, self::extract_ids_from_uploads_string( $value, $resolve_path ) );
 		}
 
@@ -146,7 +277,7 @@ class OLIMC_Media_Usage_Parser {
 						$found[] = $id;
 					}
 				}
-				if ( isset( $item['url'] ) && is_string( $item['url'] ) && strpos( $item['url'], 'wp-content/uploads' ) !== false ) {
+				if ( isset( $item['url'] ) && is_string( $item['url'] ) && self::text_references_uploads( $item['url'] ) ) {
 					$found = array_merge( $found, self::extract_ids_from_uploads_string( $item['url'], $resolve_path ) );
 				}
 				$found = array_merge( $found, self::extract_attachment_ids_from_array( $item, $resolve_path, $is_attachment_id ) );
@@ -155,7 +286,7 @@ class OLIMC_Media_Usage_Parser {
 				if ( $id > 0 && $is_attachment_id( $id ) ) {
 					$found[] = $id;
 				}
-			} elseif ( is_string( $item ) && strpos( $item, 'wp-content/uploads' ) !== false ) {
+			} elseif ( is_string( $item ) && self::text_references_uploads( $item ) ) {
 				$found = array_merge( $found, self::extract_ids_from_uploads_string( $item, $resolve_path ) );
 			}
 		}
@@ -170,15 +301,28 @@ class OLIMC_Media_Usage_Parser {
 	 */
 	public static function extract_ids_from_uploads_string( $text, callable $resolve_path ) {
 		$found = [];
-		if ( preg_match_all( '#wp-content/uploads/([^\s"\'\'<>,;}\]]+)#', $text, $matches ) ) {
-			foreach ( $matches[1] as $path ) {
-				$id = (int) $resolve_path( $path );
-				if ( $id > 0 ) {
-					$found[] = $id;
-				}
+		foreach ( self::relative_upload_paths( $text ) as $path ) {
+			$id = self::resolve_upload_relative_path( $path, $resolve_path );
+			if ( $id > 0 ) {
+				$found[] = $id;
 			}
 		}
 		return $found;
+	}
+
+	/**
+	 * Resolve a path relative to the upload root. Also tries without a multisite sites/{id}/ prefix.
+	 *
+	 * @param string   $path         Relative path.
+	 * @param callable $resolve_path Resolver.
+	 * @return int
+	 */
+	private static function resolve_upload_relative_path( $path, callable $resolve_path ) {
+		$id = (int) $resolve_path( $path );
+		if ( $id <= 0 && preg_match( '#^sites/\d+/(.+)$#', $path, $match ) ) {
+			$id = (int) $resolve_path( $match[1] );
+		}
+		return $id;
 	}
 
 	/**

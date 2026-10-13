@@ -29,7 +29,15 @@ function olimc_test_assert( $condition, $message ) {
 	echo "OK: {$message}\n";
 }
 
-$known_attachments = [ 61273 => true, 61309 => true, 99 => true ];
+OLIMC_Media_Usage_Parser::set_upload_markers(
+	[
+		'https://osm.ca/wp-content/uploads',
+		'//osm.ca/wp-content/uploads',
+		'/wp-content/uploads',
+	]
+);
+
+$known_attachments = [ 61273 => true, 61309 => true, 99 => true, 37455 => true ];
 $resolve_path      = function ( $path ) {
 	if ( strpos( $path, 'belle-et-la-bete' ) !== false ) {
 		return 61273;
@@ -84,6 +92,51 @@ olimc_test_assert(
 $repeater_value = '61309';
 $ids            = OLIMC_Media_Usage_Parser::extract_attachment_ids_from_value( $repeater_value, $resolve_path, $is_attachment );
 olimc_test_assert( in_array( 61309, $ids, true ), 'nested repeater image sub-field (numeric ID)' );
+
+// Bedrock (osm.ca) serves /app/uploads. Markers come from wp_upload_dir(), never a fixed directory.
+$bedrock = OLIMC_Media_Usage_Parser::markers_from_upload_dir(
+	[
+		'baseurl' => 'https://osm.ca/app/uploads',
+		'basedir' => '/srv/www/osm.ca/app/uploads',
+	]
+);
+olimc_test_assert( in_array( 'https://osm.ca/app/uploads', $bedrock, true ), 'Bedrock baseurl is an upload marker' );
+olimc_test_assert( in_array( '//osm.ca/app/uploads', $bedrock, true ), 'Bedrock protocol-less baseurl is an upload marker' );
+olimc_test_assert( in_array( '/app/uploads', $bedrock, true ), 'Bedrock URL path is an upload marker' );
+olimc_test_assert( in_array( '/srv/www/osm.ca/app/uploads', $bedrock, true ), 'Bedrock basedir is an upload marker' );
+
+$multisite = OLIMC_Media_Usage_Parser::markers_from_upload_dir(
+	[
+		'baseurl' => 'https://osm.ca/app/uploads/sites/3',
+		'basedir' => '/srv/www/osm.ca/app/uploads/sites/3',
+	]
+);
+olimc_test_assert( in_array( 'https://osm.ca/app/uploads', $multisite, true ), 'multisite marker includes the network upload root' );
+olimc_test_assert( in_array( '/app/uploads', $multisite, true ), 'multisite marker includes the network upload path' );
+
+OLIMC_Media_Usage_Parser::set_upload_markers( $bedrock );
+$resolve_bedrock = function ( $path ) {
+	if ( $path === '2024/06/tournee-europe.jpg' || $path === 'sites/3/2024/06/tournee-europe.jpg' ) {
+		return 37455;
+	}
+	return 0;
+};
+$bedrock_url = 'https://osm.ca/app/uploads/2024/06/tournee-europe.jpg';
+$ids         = OLIMC_Media_Usage_Parser::extract_attachment_ids_from_value( $bedrock_url, $resolve_bedrock, $is_attachment );
+olimc_test_assert( in_array( 37455, $ids, true ), 'ACF image field (URL return format, Bedrock /app/uploads)' );
+
+$protocol_less = '//osm.ca/app/uploads/2024/06/tournee-europe.jpg';
+$ids           = OLIMC_Media_Usage_Parser::extract_attachment_ids_from_value( $protocol_less, $resolve_bedrock, $is_attachment );
+olimc_test_assert( in_array( 37455, $ids, true ), 'protocol-less Bedrock upload URL' );
+
+$relative = 'See /app/uploads/2024/06/tournee-europe.jpg in the page.';
+$ids      = OLIMC_Media_Usage_Parser::extract_attachment_ids_from_value( $relative, $resolve_bedrock, $is_attachment );
+olimc_test_assert( in_array( 37455, $ids, true ), 'relative Bedrock upload path' );
+
+OLIMC_Media_Usage_Parser::set_upload_markers( $multisite );
+$site_url = 'https://osm.ca/app/uploads/sites/3/2024/06/tournee-europe.jpg';
+$ids      = OLIMC_Media_Usage_Parser::extract_attachment_ids_from_value( $site_url, $resolve_bedrock, $is_attachment );
+olimc_test_assert( in_array( 37455, $ids, true ), 'multisite upload URL resolves with or without the sites prefix' );
 
 if ( $failures > 0 ) {
 	echo "\n{$failures} test(s) failed.\n";

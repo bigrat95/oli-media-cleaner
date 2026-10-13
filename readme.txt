@@ -5,7 +5,7 @@ Tags: media, cleanup, unused images, media cleaner, disk space
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.5.17
+Stable tag: 1.5.18
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -104,6 +104,12 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 4. Scan sources information panel
 
 == Changelog ==
+
+= 1.5.18 =
+* FIX: ACF meta keys that contain a hyphen (for example highlight-image) are included. Values are passed through $wpdb->prepare() instead of being dropped by a character whitelist
+* FIX: Upload URL detection uses wp_upload_dir() (base URL, protocol-less URL, path, and directory, including multisite) so Bedrock sites under /app/uploads match the ACF URL return format
+* FIX: When ACF is active, a chunked raw-meta pass still counts non-ACF references (page builders, SEO, serialized IDs, URLs in meta) as used
+* CHANGE: AJAX and cron keep separate scan state, a lock, and a pending-results option so they cannot overwrite each other or rewrite the full unused list on every batch
 
 = 1.5.17 =
 * FIX: ACF image fields (including the default array return format on custom post types such as concert) are detected with indexed meta_key lookups from acf_get_field_groups() / acf_get_fields(), instead of one LIKE query per stored key
@@ -224,6 +230,9 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 * Native WordPress admin UI — no external dependencies
 
 == Upgrade Notice ==
+
+= 1.5.18 =
+Fixes missed ACF fields whose names contain a hyphen, and upload URLs on Bedrock (/app/uploads). Non-ACF meta is scanned again. Update before deleting anything the 1.5.17 scan flagged.
 
 = 1.5.17 =
 Fixes ACF media detection on large sites (no per-key LIKE scans). Failed scans no longer flag media as unused.

@@ -142,6 +142,11 @@ function acf_get_fields( $key ) {
 			[ 'key' => 'field_brochure', 'name' => 'brochure', 'type' => 'file' ],
 			[ 'key' => 'field_portrait', 'name' => 'portrait', 'type' => 'image' ],
 			[
+				'key'   => 'field_flexible_components_highlight-image_image',
+				'name'  => 'highlight-image',
+				'type'  => 'image',
+			],
+			[
 				'key'        => 'field_hero',
 				'name'       => 'hero',
 				'type'       => 'group',
@@ -215,6 +220,11 @@ olimc_scan_assert( in_array( 'photo', $targets['names'], true ), 'repeater image
 olimc_scan_assert( in_array( 'shot', $targets['names'], true ), 'group image sub-field collected' );
 olimc_scan_assert( in_array( 'field_concert_image', $targets['keys'], true ), 'concert image field key collected' );
 olimc_scan_assert( in_array( 'field_carousel_images', $targets['keys'], true ), 'clone gallery field key collected' );
+olimc_scan_assert( in_array( 'highlight-image', $targets['names'], true ), 'hyphenated ACF field name collected' );
+olimc_scan_assert(
+	in_array( 'field_flexible_components_highlight-image_image', $targets['keys'], true ),
+	'hyphenated ACF field key collected'
+);
 olimc_scan_assert(
 	$scanner->acf_meta_key_matches_field( 'content_blocks_4_image_carousel_images', 'images' ),
 	'clone inside flexible content matches suffixed meta key'
@@ -253,6 +263,7 @@ $array_value = serialize(
 );
 $gallery_value = serialize( [ 103, 104 ] );
 $clone_value   = serialize( [ 105, 106 ] );
+$builder_value = serialize( [ 'id' => 221 ] );
 
 $seed = [
 	[ 500001, 'image', '100' ],
@@ -267,6 +278,16 @@ $seed = [
 	[ 500010, 'shows_2_photo', '109' ],
 	[ 500011, '_hero_shot', 'field_shot' ],
 	[ 500012, 'hero_shot', '111' ],
+	[ 500013, 'highlight-image', '37455' ],
+	[ 500014, '_highlight-image', 'field_flexible_components_highlight-image_image' ],
+	[ 500015, '_flexible_components_highlight-image_image', 'field_flexible_components_highlight-image_image' ],
+	[ 500016, 'flexible_components_highlight-image_image', '37681' ],
+	[ 500017, 'image', 'https://osm.ca/app/uploads/2024/06/tournee-url.jpg' ],
+	[ 500018, '_wp_attached_file', '2024/06/tournee-url.jpg' ],
+	[ 500019, 'rank_math_facebook_image', '220' ],
+	[ 500020, 'page_builder', $builder_value ],
+	[ 500021, 'og_image_url', 'https://osm.ca/app/uploads/2024/06/tournee-og.jpg' ],
+	[ 500022, '_wp_attached_file', '2024/06/tournee-og.jpg' ],
 ];
 $insert_meta = $pdo->prepare( 'INSERT INTO postmeta (meta_id, post_id, meta_key, meta_value) VALUES (?, 2, ?, ?)' );
 foreach ( $seed as $row ) {
@@ -279,6 +300,17 @@ $pdo->prepare( 'INSERT INTO options (option_id, option_name, option_value) VALUE
 
 // The attached file row is stored on the attachment post, but the lookup only needs the meta value.
 $pdo->exec( "UPDATE postmeta SET post_id = 102 WHERE meta_id = 500004" );
+$pdo->exec( "UPDATE postmeta SET post_id = 69161 WHERE meta_id = 500018" );
+$pdo->exec( "UPDATE postmeta SET post_id = 222 WHERE meta_id = 500022" );
+
+OLIMC_Media_Usage_Parser::set_upload_markers(
+	[
+		'https://example.com/wp-content/uploads',
+		'https://osm.ca/app/uploads',
+		'//osm.ca/app/uploads',
+		'/app/uploads',
+	]
+);
 
 /**
  * @param bool $acf_enabled Whether the ACF API path is used.
@@ -312,6 +344,7 @@ function olimc_run_scan( OLIMC_Fake_Wpdb $db, $acf_enabled ) {
 		'queries' => count( $db->queries ),
 		'likes'   => $likes,
 		'seconds' => microtime( true ) - $started,
+		'sql'     => $db->queries,
 	];
 }
 
@@ -327,7 +360,7 @@ function olimc_assert_used( array $used, array $ids, $label ) {
 	olimc_scan_assert( ! isset( $used[50] ), "{$label} does not flag an unreferenced attachment" );
 }
 
-$expected = [ 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112 ];
+$expected = [ 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 37455, 37681, 69161, 220, 221, 222 ];
 
 global $wpdb;
 $wpdb = new OLIMC_Fake_Wpdb( $pdo );
@@ -337,8 +370,29 @@ olimc_scan_assert( $acf['state']['phase'] === 'done', 'ACF API scan finishes' );
 olimc_scan_assert( $acf['state']['mode'] === 'acf', 'primary path uses the ACF API' );
 olimc_assert_used( $acf['state']['used'], $expected, 'ACF path' );
 olimc_scan_assert( $acf['likes'] === 0, 'ACF path issues no per-key LIKE scans (' . $acf['likes'] . ')' );
-olimc_scan_assert( $acf['queries'] < 400, 'ACF path query count stays batched (' . $acf['queries'] . ' queries)' );
+olimc_scan_assert( $acf['queries'] < 500, 'ACF path query count stays batched (' . $acf['queries'] . ' queries)' );
 olimc_scan_assert( $acf['seconds'] < 45, 'ACF path finishes in reasonable time (' . round( $acf['seconds'], 2 ) . 's)' );
+$saw_name      = false;
+$saw_nested    = false;
+$saw_field_key = false;
+foreach ( $acf['sql'] as $sql ) {
+	if ( strpos( $sql, "'highlight-image'" ) !== false ) {
+		$saw_name = true;
+	}
+	if ( strpos( $sql, "'flexible_components_highlight-image_image'" ) !== false ) {
+		$saw_nested = true;
+	}
+	if ( strpos( $sql, "'field_flexible_components_highlight-image_image'" ) !== false ) {
+		$saw_field_key = true;
+	}
+}
+olimc_scan_assert( $saw_name && $saw_nested && $saw_field_key, 'hyphenated ACF keys are bound in SQL instead of being skipped' );
+olimc_scan_assert( isset( $acf['state']['used'][37455] ), 'ACF path keeps hyphenated highlight-image attachment 37455' );
+olimc_scan_assert( isset( $acf['state']['used'][37681] ), 'ACF path keeps nested hyphenated key attachment 37681' );
+olimc_scan_assert( isset( $acf['state']['used'][69161] ), 'ACF path keeps Bedrock URL return format attachment 69161' );
+olimc_scan_assert( isset( $acf['state']['used'][220] ), 'ACF path keeps non-ACF numeric meta attachment 220' );
+olimc_scan_assert( isset( $acf['state']['used'][221] ), 'ACF path keeps non-ACF serialized meta attachment 221' );
+olimc_scan_assert( isset( $acf['state']['used'][222] ), 'ACF path keeps non-ACF upload URL in meta attachment 222' );
 echo 'ACF path: ' . $acf['queries'] . ' queries in ' . round( $acf['seconds'], 2 ) . "s\n";
 
 $fallback = olimc_run_scan( $wpdb, false );
@@ -356,6 +410,32 @@ $failed           = $engine->initial_state();
 olimc_scan_assert( $failed['phase'] === 'failed', 'database error fails the scan' );
 olimc_scan_assert( ! OLIMC_Acf_Meta_Scanner::may_mark_unused( $failed ), 'a failed scan marks nothing unused' );
 olimc_scan_assert( $failed['pending_unused'] === [], 'a failed scan has no unused list' );
+olimc_scan_assert( $failed['pending_delta'] === [], 'a failed scan has no pending delta' );
+
+$admin_source  = file_get_contents( dirname( __DIR__ ) . '/includes/class-admin.php' );
+$cron_start    = strpos( $admin_source, 'function run_scheduled_cleanup' );
+$cron_end      = strpos( $admin_source, 'function persist_scan_progress' );
+$cron_body     = substr( $admin_source, $cron_start, $cron_end - $cron_start );
+olimc_scan_assert( strpos( $cron_body, 'wp_trash_post' ) === false, 'cron never trashes posts' );
+olimc_scan_assert( strpos( $cron_body, 'wp_delete_attachment' ) === false, 'cron never deletes attachments' );
+olimc_scan_assert( strpos( $cron_body, 'reschedule_scan_soon' ) !== false, 'incomplete cron reschedules itself' );
+olimc_scan_assert( strpos( $cron_body, "state_option_key('cron')" ) !== false, 'cron uses its own state option' );
+olimc_scan_assert( strpos( $admin_source, "state_option_key('ajax')" ) !== false, 'AJAX uses its own state option' );
+olimc_scan_assert( strpos( $admin_source, 'acquire_lock' ) !== false, 'AJAX and cron take a scan lock' );
+olimc_scan_assert( strpos( $admin_source, "unset(\$state['pending_delta'], \$state['pending_unused'])" ) !== false, 'progress option does not keep the unused list' );
+olimc_scan_assert( strpos( $admin_source, "current_user_can('manage_options')" ) !== false, 'AJAX requires manage_options' );
+olimc_scan_assert( strpos( $admin_source, "check_ajax_referer('olimc_nonce'" ) !== false, 'AJAX checks the nonce' );
+
+$scanner_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-scanner.php' );
+olimc_scan_assert( strpos( $scanner_source, 'acf_include_fields' ) !== false, 'local ACF JSON is loaded via acf_include_fields' );
+olimc_scan_assert( strpos( $scanner_source, '!$init_done && !$acf_init_done && function_exists(\'acf_init\')' ) !== false, 'acf_init() runs only before init' );
+olimc_scan_assert( strpos( $scanner_source, 'max(5, $max - 5)' ) !== false, 'synchronous scans stop before max_execution_time' );
+$js = file_get_contents( dirname( __DIR__ ) . '/assets/js/admin.js' );
+olimc_scan_assert( strpos( $js, 'confirmWithPreview' ) !== false, 'delete and trash still preview the filename' );
+
+$engine_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-acf-meta-scanner.php' );
+olimc_scan_assert( strpos( $engine_source, 'function is_safe_meta_key' ) === false, 'meta keys are no longer filtered by a character whitelist' );
+olimc_scan_assert( strpos( $engine_source, 'generic_post' ) !== false, 'ACF mode still walks non-ACF meta' );
 
 if ( $failures > 0 ) {
 	echo "\n{$failures} test(s) failed.\n";

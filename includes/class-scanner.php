@@ -43,11 +43,20 @@ class OLIMC_Scanner {
         $this->used_ids = [];
         $this->ensure_attachment_lookup();
 
-        $engine = new OLIMC_Acf_Meta_Scanner($this);
-        $state  = $engine->initial_state();
-        $guard  = 0;
+        // AJAX and cron must call OLIMC_Acf_Meta_Scanner::step() instead. This
+        // synchronous helper stops before max_execution_time on web requests.
+        $engine   = new OLIMC_Acf_Meta_Scanner($this);
+        $state    = $engine->initial_state();
+        $deadline = $this->synchronous_scan_deadline();
+        $guard    = 0;
         while (!in_array($state['phase'], ['done', 'failed'], true) && $guard < 1000000) {
-            $state = $engine->step($state, 20000);
+            if (microtime(true) >= $deadline) {
+                $state['phase'] = 'failed';
+                $state['error'] = 'Scan stopped before the PHP time limit.';
+                break;
+            }
+            $remaining_ms = (int) max(200, ($deadline - microtime(true)) * 1000);
+            $state        = $engine->step($state, min(2000, $remaining_ms));
             $guard++;
         }
 
@@ -63,6 +72,23 @@ class OLIMC_Scanner {
 
         $this->used_ids = array_map('intval', array_keys($state['used']));
         return $this->used_ids;
+    }
+
+    /**
+     * Wall clock after which a synchronous scan must stop and fail safe.
+     *
+     * Web SAPIs honour max_execution_time (minus a few seconds). CLI has no
+     * request limit; the cap only prevents a runaway loop.
+     *
+     * @return float
+     */
+    private function synchronous_scan_deadline() {
+        $max = function_exists('ini_get') ? (int) ini_get('max_execution_time') : 0;
+        $cli = function_exists('php_sapi_name') && php_sapi_name() === 'cli';
+        if ($cli || $max <= 0) {
+            return microtime(true) + 3600;
+        }
+        return microtime(true) + max(5, $max - 5);
     }
 
     /**
@@ -144,11 +170,20 @@ class OLIMC_Scanner {
         if (!function_exists('acf_get_field_groups')) {
             return false;
         }
-        if (function_exists('acf_init') && function_exists('did_action') && !did_action('acf/init')) {
-            acf_init();
-        }
-        if (function_exists('acf_include_fields') && function_exists('did_action') && !did_action('acf/include_fields')) {
-            acf_include_fields();
+        $init_done       = function_exists('did_action') && did_action('init');
+        $acf_init_done   = function_exists('did_action') && did_action('acf/init');
+        $fields_included = function_exists('did_action') && did_action('acf/include_fields');
+
+        // Local JSON is loaded on acf/include_fields. After WordPress init, do not
+        // call acf_init() again (that re-registers hooks). Call include_fields
+        // directly when it has not run yet. acf_init() is only for a scan that
+        // really is running before init.
+        if (!$fields_included && function_exists('acf_include_fields')) {
+            if (!$init_done && !$acf_init_done && function_exists('acf_init')) {
+                acf_init();
+            } else {
+                acf_include_fields();
+            }
         }
         return true;
     }
@@ -330,7 +365,7 @@ class OLIMC_Scanner {
     /**
      * Resolve a relative uploads path to an attachment ID (for parsers).
      *
-     * @param string $path Upload path relative to wp-content/uploads.
+     * @param string $path Upload path relative to the site uploads directory.
      * @return int
      */
     public function resolve_upload_path_to_id( $path ) {
@@ -430,13 +465,17 @@ class OLIMC_Scanner {
 
     private function collect_post_content_images() {
         global $wpdb;
-        // Get all post content that references uploads
-        $rows = $wpdb->get_col(
+        $like = $this->upload_content_like();
+        if ($like === null) {
+            return;
+        }
+        $rows = $wpdb->get_col($wpdb->prepare(
             "SELECT post_content FROM {$wpdb->posts}
-             WHERE post_content LIKE '%wp-content/uploads%'
+             WHERE post_content LIKE %s
              AND post_status != 'trash'
-             AND post_type NOT IN ('revision', 'attachment')"
-        );
+             AND post_type NOT IN ('revision', 'attachment')",
+            $like
+        ));
 
         $attachment_ids = [];
         foreach ($rows as $content) {
@@ -452,12 +491,9 @@ class OLIMC_Scanner {
             if (preg_match_all('/data-id=["\'](\d+)["\']/', $content, $matches)) {
                 $attachment_ids = array_merge($attachment_ids, $matches[1]);
             }
-            // Fallback: find filenames in uploads and resolve to IDs
-            if (preg_match_all('#wp-content/uploads/([^\s"\'<>]+)#', $content, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $attachment_ids[] = $id;
-                }
+            foreach (OLIMC_Media_Usage_Parser::relative_upload_paths($content) as $path) {
+                $id = $this->find_attachment_by_path($path);
+                if ($id) $attachment_ids[] = $id;
             }
         }
 
@@ -537,13 +573,7 @@ class OLIMC_Scanner {
                     $this->used_ids = array_merge($this->used_ids, explode(',', $ids_str));
                 }
             }
-            // URLs in widget content
-            if (preg_match_all('#wp-content/uploads/([^\s"\'<>,;}\\\]+)#', $serialized, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
+            $this->merge_upload_paths_from_text($serialized);
         }
     }
 
@@ -565,25 +595,13 @@ class OLIMC_Scanner {
                     }
                 }
             }
-            // Find image URLs
-            if (preg_match_all('#wp-content/uploads/([^\s"\'<>,;}\\\]+)#', $json, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
+            $this->merge_upload_paths_from_text($json);
         }
 
         // Elementor global CSS and data
         $elementor_global = get_option('elementor_custom_icon_sets_config');
         if (is_array($elementor_global)) {
-            $serialized = serialize($elementor_global);
-            if (preg_match_all('#wp-content/uploads/([^\s"\'<>,;}\\\]+)#', $serialized, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
+            $this->merge_upload_paths_from_text(serialize($elementor_global));
         }
     }
 
@@ -635,23 +653,7 @@ class OLIMC_Scanner {
             $content = @file_get_contents($file->getPathname());
             if (!$content) continue;
 
-            // Find upload paths
-            if (preg_match_all('#wp-content/uploads/([^\s"\'\'<>\)\},;]+)#', $content, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $path = rtrim($path, '\\');
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
-
-            // Find get_site_url() . '/wp-content/uploads/...' patterns
-            if (preg_match_all('#/wp-content/uploads/([^\s"\'\'<>\)\},;]+)#', $content, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $path = rtrim($path, '\\');
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
+            $this->merge_upload_paths_from_text($content);
 
             // Find attachment IDs in PHP: wp_get_attachment_image(123), wp_get_attachment_url(456)
             if ($ext === 'php') {
@@ -667,23 +669,22 @@ class OLIMC_Scanner {
      */
     private function collect_css_background_images() {
         global $wpdb;
-        // Post content with inline styles
-        $rows = $wpdb->get_col(
+        $like = $this->upload_content_like();
+        if ($like === null) {
+            return;
+        }
+        $rows = $wpdb->get_col($wpdb->prepare(
             "SELECT post_content FROM {$wpdb->posts}
-             WHERE post_content LIKE '%background%upload%'
+             WHERE post_content LIKE %s
+             AND post_content LIKE %s
              AND post_status != 'trash'
-             AND post_type NOT IN ('revision', 'attachment')"
-        );
+             AND post_type NOT IN ('revision', 'attachment')",
+            '%' . $wpdb->esc_like('background') . '%',
+            $like
+        ));
 
         foreach ($rows as $content) {
-            if (preg_match_all('#background(?:-image)?\s*:\s*url\s*\(\s*[\'\'"]*([^\)\'\"]+wp-content/uploads/[^\)\'\"]+)#i', $content, $matches)) {
-                foreach ($matches[1] as $url) {
-                    if (preg_match('#wp-content/uploads/([^\s"\'\'<>\)\},;]+)#', $url, $m)) {
-                        $id = $this->find_attachment_by_path($m[1]);
-                        if ($id) $this->used_ids[] = $id;
-                    }
-                }
-            }
+            $this->merge_upload_paths_from_text($content);
         }
     }
 
@@ -708,23 +709,22 @@ class OLIMC_Scanner {
      */
     private function collect_term_description_images() {
         global $wpdb;
-        $rows = $wpdb->get_col(
-            "SELECT description FROM {$wpdb->term_taxonomy}
-             WHERE description LIKE '%wp-content/uploads%'"
-        );
+        $like = $this->upload_content_like();
+        $rows = [];
+        if ($like !== null) {
+            $rows = $wpdb->get_col($wpdb->prepare(
+                "SELECT description FROM {$wpdb->term_taxonomy}
+                 WHERE description LIKE %s",
+                $like
+            ));
+        }
 
         foreach ($rows as $description) {
             // Match wp-image-123 class
             if (preg_match_all('/wp-image-(\d+)/', $description, $matches)) {
                 $this->used_ids = array_merge($this->used_ids, $matches[1]);
             }
-            // Match image URLs in uploads
-            if (preg_match_all('#wp-content/uploads/([^\s"\'<>\)\},;]+)#', $description, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
-            }
+            $this->merge_upload_paths_from_text($description);
         }
 
         // Also check termmeta for image IDs/URLs (some plugins store images in term meta)
@@ -739,17 +739,14 @@ class OLIMC_Scanner {
         );
         $this->used_ids = array_merge($this->used_ids, $meta_ids);
 
-        // URLs stored in termmeta
-        $meta_urls = $wpdb->get_col(
-            "SELECT DISTINCT meta_value FROM {$wpdb->termmeta}
-             WHERE meta_value LIKE '%wp-content/uploads%'"
-        );
-        foreach ($meta_urls as $val) {
-            if (preg_match_all('#wp-content/uploads/([^\s"\'<>\)\},;]+)#', $val, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
+        if ($like !== null) {
+            $meta_urls = $wpdb->get_col($wpdb->prepare(
+                "SELECT DISTINCT meta_value FROM {$wpdb->termmeta}
+                 WHERE meta_value LIKE %s",
+                $like
+            ));
+            foreach ($meta_urls as $val) {
+                $this->merge_upload_paths_from_text($val);
             }
         }
     }
@@ -792,5 +789,31 @@ class OLIMC_Scanner {
 
         $this->path_cache[$clean] = $id ? (int) $id : 0;
         return $this->path_cache[$clean];
+    }
+
+    /**
+     * LIKE pattern for the current upload location, or null when it is unknown.
+     *
+     * @return string|null
+     */
+    private function upload_content_like() {
+        global $wpdb;
+        $fragment = OLIMC_Media_Usage_Parser::upload_search_fragment();
+        if ($fragment === '') {
+            return null;
+        }
+        return '%' . $wpdb->esc_like($fragment) . '%';
+    }
+
+    /**
+     * @param string $text Text that may cite an upload URL or path.
+     */
+    private function merge_upload_paths_from_text($text) {
+        foreach (OLIMC_Media_Usage_Parser::relative_upload_paths($text) as $path) {
+            $id = $this->find_attachment_by_path($path);
+            if ($id) {
+                $this->used_ids[] = $id;
+            }
+        }
     }
 }
