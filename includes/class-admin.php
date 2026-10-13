@@ -35,6 +35,12 @@ class OLIMC_Admin {
 
         // Cron hook
         add_action('olimc_scheduled_cleanup', [__CLASS__, 'run_scheduled_cleanup']);
+
+        // Any deletion path (Media Library, wp_scheduled_delete, this plugin).
+        add_filter('pre_delete_attachment', [__CLASS__, 'pre_delete_attachment'], 0, 3);
+        add_filter('pre_trash_post', [__CLASS__, 'pre_trash_post'], 0, 3);
+        add_filter('wp_delete_file', [__CLASS__, 'preserve_shared_upload_file'], 100);
+        add_action('delete_attachment', [__CLASS__, 'on_delete_attachment'], 0);
     }
 
     /**
@@ -1000,32 +1006,129 @@ class OLIMC_Admin {
     }
 
     /**
-     * Permanently delete one attachment, leaving files that another attachment still references.
+     * Shared files, or an unknown index, must not be deleted or trashed.
      *
-     * When the shared-file lookup fails, no file is unlinked.
+     * @param int $post_id Attachment ID.
+     * @return bool
+     */
+    public static function must_keep_attachment_files($post_id) {
+        $post_id = (int) $post_id;
+        if ($post_id <= 0) {
+            return false;
+        }
+        $shared = (new OLIMC_Scanner())->shared_relative_upload_paths($post_id);
+        return $shared === null || $shared !== [];
+    }
+
+    /**
+     * Stop wp_delete_attachment before delete_attachment (Imagify) and file removal.
+     *
+     * @param mixed $check        Previous decision.
+     * @param mixed $post         Post object.
+     * @param bool  $force_delete Unused. Present so the filter receives the core arguments.
+     * @return mixed
+     */
+    public static function pre_delete_attachment($check, $post, $force_delete = false) {
+        unset($force_delete);
+        if (null !== $check) {
+            return $check;
+        }
+        if (!is_object($post) || (isset($post->post_type) && $post->post_type !== 'attachment')) {
+            return null;
+        }
+        $post_id = isset($post->ID) ? (int) $post->ID : 0;
+        if (self::must_keep_attachment_files($post_id)) {
+            return false;
+        }
+        return null;
+    }
+
+    /**
+     * Refuse to trash an attachment whose files are still used elsewhere.
+     *
+     * With EMPTY_TRASH_DAYS at 0, trashing deletes immediately. Otherwise WordPress
+     * permanently deletes the trash after 30 days, outside this plugin.
+     *
+     * @param mixed $check Previous decision.
+     * @param mixed $post  Post object.
+     * @param mixed $previous_status Unused. Present so the filter receives the core arguments.
+     * @return mixed
+     */
+    public static function pre_trash_post($check, $post, $previous_status = '') {
+        unset($previous_status);
+        if (null !== $check) {
+            return $check;
+        }
+        if (!is_object($post) || (isset($post->post_type) && $post->post_type !== 'attachment')) {
+            return null;
+        }
+        $post_id = isset($post->ID) ? (int) $post->ID : 0;
+        if (self::must_keep_attachment_files($post_id)) {
+            return false;
+        }
+        return null;
+    }
+
+    /**
+     * Keep a file on disk when another attachment still references it.
+     *
+     * Also keeps a .webp or .avif sibling of a shared file. A failed lookup
+     * keeps the file. Returning an empty string makes wp_delete_file skip unlink.
+     *
+     * @param string $file Absolute path.
+     * @return string
+     */
+    public static function preserve_shared_upload_file($file) {
+        if (!is_string($file) || $file === '') {
+            return $file;
+        }
+        $verdict = (new OLIMC_Scanner())->absolute_file_is_shared($file);
+        if ($verdict === false) {
+            return $file;
+        }
+        return '';
+    }
+
+    /**
+     * If deletion still reaches delete_attachment, drop later callbacks.
+     *
+     * Imagify removes WebP, AVIF, and its backup with WP_Filesystem, which
+     * does not call wp_delete_file. Priority 0 runs before those callbacks.
+     *
+     * @param int $post_id Attachment ID.
+     */
+    public static function on_delete_attachment($post_id) {
+        if (!self::must_keep_attachment_files($post_id)) {
+            return;
+        }
+        if (!isset($GLOBALS['wp_filter']['delete_attachment'])) {
+            return;
+        }
+        $hook = $GLOBALS['wp_filter']['delete_attachment'];
+        $callbacks = (is_object($hook) && isset($hook->callbacks) && is_array($hook->callbacks)) ? $hook->callbacks : null;
+        if (!is_array($callbacks)) {
+            return;
+        }
+        foreach ($callbacks as $priority => $group) {
+            if ((int) $priority <= 0 || !is_array($group)) {
+                continue;
+            }
+            foreach ($group as $callback) {
+                if (is_array($callback) && isset($callback['function'])) {
+                    remove_action('delete_attachment', $callback['function'], (int) $priority);
+                }
+            }
+        }
+    }
+
+    /**
+     * Permanently delete one attachment. Shared files are refused by pre_delete_attachment.
      *
      * @param int $post_id Attachment ID.
      * @return mixed Result of wp_delete_attachment().
      */
     private static function delete_attachment_preserve_shared_files($post_id) {
-        $post_id = (int) $post_id;
-        $scanner = new OLIMC_Scanner();
-        $shared  = $scanner->shared_relative_upload_paths($post_id);
-        $filter  = static function ($file) use ($shared) {
-            if (!is_string($file) || $file === '') {
-                return $file;
-            }
-            if ($shared === null || OLIMC_Scanner::absolute_path_matches_relative($file, $shared)) {
-                return '';
-            }
-            return $file;
-        };
-        add_filter('wp_delete_file', $filter, 100);
-        try {
-            return wp_delete_attachment($post_id, true);
-        } finally {
-            remove_filter('wp_delete_file', $filter, 100);
-        }
+        return wp_delete_attachment((int) $post_id, true);
     }
 
     /**

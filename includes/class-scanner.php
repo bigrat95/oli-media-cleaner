@@ -831,12 +831,31 @@ class OLIMC_Scanner {
     /**
      * Whether an absolute filesystem path is one of the relative upload paths.
      *
+     * When wp_upload_dir() is available, the file must sit in that basedir and
+     * the remainder must equal the relative path. That keeps a main-site file
+     * from matching a subsite path that merely ends with the same suffix.
+     *
      * @param string   $absolute  Absolute path passed to wp_delete_file.
      * @param string[] $relatives Paths relative to the uploads directory.
      * @return bool
      */
     public static function absolute_path_matches_relative($absolute, array $relatives) {
         $absolute = str_replace('\\', '/', (string) $absolute);
+        $basedir = self::upload_basedir();
+        if ($basedir !== '') {
+            $prefix = rtrim($basedir, '/') . '/';
+            if (strpos($absolute, $prefix) !== 0) {
+                return false;
+            }
+            $relative = substr($absolute, strlen($prefix));
+            foreach ($relatives as $candidate) {
+                $candidate = ltrim(str_replace('\\', '/', (string) $candidate), '/');
+                if ($candidate !== '' && $candidate === $relative) {
+                    return true;
+                }
+            }
+            return false;
+        }
         foreach ($relatives as $relative) {
             $relative = ltrim(str_replace('\\', '/', (string) $relative), '/');
             if ($relative === '') {
@@ -851,43 +870,103 @@ class OLIMC_Scanner {
     }
 
     /**
-     * path => attachment IDs that reference it (original file or a size).
+     * True when this absolute file, or the image it was derived from, is shared.
+     *
+     * Null means the index could not be read. Callers must keep the file.
+     * A trailing .webp or .avif is compared against the underlying image path.
+     *
+     * @param string $absolute Absolute path.
+     * @return bool|null
+     */
+    public function absolute_file_is_shared($absolute) {
+        $index = $this->upload_path_index();
+        if ($index === null) {
+            return null;
+        }
+        $candidates = [$absolute];
+        foreach (['.webp', '.avif'] as $extension) {
+            if (is_string($absolute) && strlen($absolute) > strlen($extension) && substr($absolute, -strlen($extension)) === $extension) {
+                $candidates[] = substr($absolute, 0, -strlen($extension));
+            }
+        }
+        foreach ($candidates as $candidate) {
+            foreach ($index as $path => $ids) {
+                if (count($ids) < 2) {
+                    continue;
+                }
+                if (self::absolute_path_matches_relative($candidate, [$path])) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Drop the cached file index. Tests use this when the database changes.
+     */
+    public static function reset_upload_path_index() {
+        self::$upload_path_index_cache = null;
+        self::$upload_path_index_ready = false;
+    }
+
+    /**
+     * @var array<string, int[]>|null
+     */
+    private static $upload_path_index_cache = null;
+
+    /**
+     * @var bool
+     */
+    private static $upload_path_index_ready = false;
+
+    /**
+     * path => attachment IDs that reference it (original file, size, or backup).
+     *
+     * Cached for the request so a bulk delete does not rescan postmeta per file.
      *
      * @return array<string, int[]>|null
      */
     private function upload_path_index() {
+        if (self::$upload_path_index_ready) {
+            return self::$upload_path_index_cache;
+        }
         global $wpdb;
         $wpdb->last_error = '';
-        $files = $wpdb->get_results($wpdb->prepare(
-            "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value != ''",
-            '_wp_attached_file'
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT post_id, meta_key, meta_value FROM {$wpdb->postmeta} WHERE meta_key IN (%s, %s, %s) AND meta_value != ''",
+            '_wp_attached_file',
+            '_wp_attachment_metadata',
+            '_wp_attachment_backup_sizes'
         ));
-        if (!empty($wpdb->last_error) || !is_array($files)) {
-            return null;
-        }
-        $meta_rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value != ''",
-            '_wp_attachment_metadata'
-        ));
-        if (!empty($wpdb->last_error) || !is_array($meta_rows)) {
+        if (!empty($wpdb->last_error) || !is_array($rows)) {
+            self::$upload_path_index_cache = null;
+            self::$upload_path_index_ready = true;
             return null;
         }
 
-        $attached = [];
-        foreach ($files as $row) {
-            $attached[(int) $row->post_id] = (string) $row->meta_value;
-        }
-        $metadata = [];
-        foreach ($meta_rows as $row) {
-            $metadata[(int) $row->post_id] = $row->meta_value;
+        $by_id = [];
+        foreach ($rows as $row) {
+            $id = (int) $row->post_id;
+            if (!isset($by_id[$id])) {
+                $by_id[$id] = [
+                    'file' => '',
+                    'meta' => '',
+                    'backup' => '',
+                ];
+            }
+            $key = isset($row->meta_key) ? (string) $row->meta_key : '';
+            if ($key === '_wp_attached_file') {
+                $by_id[$id]['file'] = (string) $row->meta_value;
+            } elseif ($key === '_wp_attachment_metadata') {
+                $by_id[$id]['meta'] = $row->meta_value;
+            } elseif ($key === '_wp_attachment_backup_sizes') {
+                $by_id[$id]['backup'] = $row->meta_value;
+            }
         }
         $index = [];
-        $ids = array_unique(array_merge(array_keys($attached), array_keys($metadata)));
-        foreach ($ids as $id) {
-            $paths = $this->relative_paths_for_attachment_row(
-                isset($attached[$id]) ? $attached[$id] : '',
-                isset($metadata[$id]) ? $metadata[$id] : ''
-            );
+        foreach ($by_id as $id => $parts) {
+            $paths = $this->relative_paths_for_attachment_row($parts['file'], $parts['meta'], $parts['backup']);
             foreach ($paths as $path) {
                 $index[$path][] = (int) $id;
             }
@@ -895,15 +974,32 @@ class OLIMC_Scanner {
         foreach ($index as $path => $list) {
             $index[$path] = array_values(array_unique($list));
         }
+        self::$upload_path_index_cache = $index;
+        self::$upload_path_index_ready = true;
         return $index;
+    }
+
+    /**
+     * @return string Uploads basedir, or an empty string when WordPress is not loaded.
+     */
+    private static function upload_basedir() {
+        if (!function_exists('wp_upload_dir')) {
+            return '';
+        }
+        $uploads = wp_upload_dir(null, false);
+        if (!is_array($uploads) || empty($uploads['basedir']) || !is_string($uploads['basedir'])) {
+            return '';
+        }
+        return rtrim(str_replace('\\', '/', $uploads['basedir']), '/');
     }
 
     /**
      * @param string $attached_file _wp_attached_file value.
      * @param mixed  $meta_value    Raw _wp_attachment_metadata value.
+     * @param mixed  $backup_value  Raw _wp_attachment_backup_sizes value.
      * @return string[]
      */
-    private function relative_paths_for_attachment_row($attached_file, $meta_value) {
+    private function relative_paths_for_attachment_row($attached_file, $meta_value, $backup_value = '') {
         $paths = [];
         $attached_file = $this->normalize_relative_upload_path($attached_file);
         if ($attached_file !== '') {
@@ -927,6 +1023,14 @@ class OLIMC_Scanner {
         }
         if (is_array($meta) && !empty($meta['sizes']) && is_array($meta['sizes'])) {
             foreach ($meta['sizes'] as $size) {
+                if (is_array($size) && !empty($size['file']) && is_string($size['file'])) {
+                    $paths[] = $this->join_upload_dir($dir, $size['file']);
+                }
+            }
+        }
+        $backup = $this->decode_attachment_meta($backup_value);
+        if (is_array($backup)) {
+            foreach ($backup as $size) {
                 if (is_array($size) && !empty($size['file']) && is_string($size['file'])) {
                     $paths[] = $this->join_upload_dir($dir, $size['file']);
                 }

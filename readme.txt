@@ -5,7 +5,7 @@ Tags: media, cleanup, unused images, media cleaner, disk space
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.5.19
+Stable tag: 1.5.20
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -104,6 +104,11 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 4. Scan sources information panel
 
 == Changelog ==
+
+= 1.5.20 =
+* FIX: A file that another attachment still references is kept on every deletion path. Trash, the 30-day empty, and the Media Library go through the same guard. Imagify is not allowed to delete the WebP, AVIF, or backup of a shared file
+* FIX: The plugin's own options, transients, and meta are ignored while scanning, so a previous result list is not treated as usage
+* FIX: Edited-image backups in _wp_attachment_backup_sizes count as shared files. The file index is read once per request
 
 = 1.5.19 =
 * FIX: Upload URLs inside HTML stop at the closing quote, tag, parenthesis, query string, or anchor, so a linked file such as a PDF in page content is kept
@@ -234,6 +239,9 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 * Native WordPress admin UI — no external dependencies
 
 == Upgrade Notice ==
+
+= 1.5.20 =
+Shared files stay on disk even if an attachment is trashed or deleted outside this plugin, including by Imagify. A previous scan result is no longer treated as proof that a file is in use.
 
 = 1.5.19 =
 Fixes linked files missed inside HTML, and stops permanent delete from removing a file that another attachment still uses. Update before deleting anything the 1.5.18 scan flagged.

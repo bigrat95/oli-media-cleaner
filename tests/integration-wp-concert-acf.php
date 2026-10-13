@@ -94,18 +94,34 @@ function olimc_test_create_concert_with_image( $attachment_id, $format ) {
 }
 
 $upload = wp_upload_dir();
-$tmp    = wp_tempnam( 'olimc-test.jpg' );
-file_put_contents( $tmp, 'fake' );
+if ( ! empty( $upload['error'] ) || empty( $upload['path'] ) || empty( $upload['url'] ) ) {
+	fwrite( STDERR, "Upload directory is not available.\n" );
+	exit( 1 );
+}
+if ( ! wp_mkdir_p( $upload['path'] ) ) {
+	fwrite( STDERR, "Could not create the upload directory.\n" );
+	exit( 1 );
+}
+$filename = 'olimc-test-' . wp_generate_password( 6, false ) . '.jpg';
+$dest     = trailingslashit( $upload['path'] ) . $filename;
+file_put_contents( $dest, 'fake' );
 $attachment_id = wp_insert_attachment(
 	[
 		'post_mime_type' => 'image/jpeg',
 		'post_title'     => 'OLIMC test attachment',
 		'post_status'    => 'inherit',
+		'guid'           => trailingslashit( $upload['url'] ) . $filename,
 	],
-	$tmp
+	$dest
 );
 require_once ABSPATH . 'wp-admin/includes/image.php';
-wp_update_attachment_metadata( $attachment_id, [ 'file' => _wp_relative_upload_path( $tmp ) ] );
+$relative = _wp_relative_upload_path( $dest );
+if ( ! is_string( $relative ) || $relative === '' || strpos( $relative, '..' ) !== false ) {
+	fwrite( STDERR, "Attachment file is not inside the upload directory.\n" );
+	exit( 1 );
+}
+update_post_meta( $attachment_id, '_wp_attached_file', $relative );
+wp_update_attachment_metadata( $attachment_id, [ 'file' => $relative ] );
 
 $formats = [ 'id', 'array', 'url' ];
 $failed  = 0;

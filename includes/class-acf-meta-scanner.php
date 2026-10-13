@@ -493,6 +493,9 @@ class OLIMC_Acf_Meta_Scanner {
 			if ( ! isset( $row->meta_value ) ) {
 				continue;
 			}
+			if ( $this->is_plugin_record( isset( $row->meta_key ) ? $row->meta_key : '' ) ) {
+				continue;
+			}
 			$this->absorb_values( $state, [ $row->meta_value ] );
 		}
 		$state['cursor'] = $hi;
@@ -811,6 +814,32 @@ class OLIMC_Acf_Meta_Scanner {
 			return null;
 		}
 		return $rows;
+	}
+
+	/**
+	 * Plugin options, transients, and meta are not evidence that a file is used.
+	 *
+	 * @param string $key Meta key or option name.
+	 * @return bool
+	 */
+	private function is_plugin_record( $key ) {
+		if ( ! is_string( $key ) || $key === '' ) {
+			return false;
+		}
+		$prefixes = [
+			'olimc_',
+			'_olimc_',
+			'_transient_olimc_',
+			'_transient_timeout_olimc_',
+			'_site_transient_olimc_',
+			'_site_transient_timeout_olimc_',
+		];
+		foreach ( $prefixes as $prefix ) {
+			if ( strpos( $key, $prefix ) === 0 ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

@@ -300,6 +300,17 @@ $pdo->prepare( 'INSERT INTO termmeta (meta_id, term_id, meta_key, meta_value) VA
 $pdo->prepare( 'INSERT INTO usermeta (umeta_id, user_id, meta_key, meta_value) VALUES (1, 4, ?, ?)' )->execute( [ 'portrait', '110' ] );
 $pdo->prepare( 'INSERT INTO options (option_id, option_name, option_value) VALUES (1, ?, ?)' )->execute( [ '_options_banner', 'field_banner' ] );
 $pdo->prepare( 'INSERT INTO options (option_id, option_name, option_value) VALUES (2, ?, ?)' )->execute( [ 'options_banner', '107' ] );
+$plugin_results = serialize(
+	[
+		[
+			'id'  => 50,
+			'url' => 'https://example.com/wp-content/uploads/2026/02/not-real.jpg',
+		],
+	]
+);
+$pdo->prepare( 'INSERT INTO options (option_id, option_name, option_value) VALUES (3, ?, ?)' )->execute( [ 'olimc_scan_results', $plugin_results ] );
+$pdo->prepare( 'INSERT INTO options (option_id, option_name, option_value) VALUES (4, ?, ?)' )->execute( [ '_transient_olimc_scan', '51' ] );
+$pdo->prepare( 'INSERT INTO postmeta (meta_id, post_id, meta_key, meta_value) VALUES (500023, 2, ?, ?)' )->execute( [ 'olimc_internal', '52' ] );
 
 // The attached file row is stored on the attachment post, but the lookup only needs the meta value.
 $pdo->exec( "UPDATE postmeta SET post_id = 102 WHERE meta_id = 500004" );
@@ -396,6 +407,8 @@ olimc_scan_assert( isset( $acf['state']['used'][69161] ), 'ACF path keeps Bedroc
 olimc_scan_assert( isset( $acf['state']['used'][220] ), 'ACF path keeps non-ACF numeric meta attachment 220' );
 olimc_scan_assert( isset( $acf['state']['used'][221] ), 'ACF path keeps non-ACF serialized meta attachment 221' );
 olimc_scan_assert( isset( $acf['state']['used'][222] ), 'ACF path keeps non-ACF upload URL in meta attachment 222' );
+olimc_scan_assert( ! isset( $acf['state']['used'][51] ), 'plugin transient is not treated as usage' );
+olimc_scan_assert( ! isset( $acf['state']['used'][52] ), 'plugin meta is not treated as usage' );
 echo 'ACF path: ' . $acf['queries'] . ' queries in ' . round( $acf['seconds'], 2 ) . "s\n";
 
 $fallback = olimc_run_scan( $wpdb, false );
@@ -406,6 +419,8 @@ olimc_scan_assert( $fallback['likes'] === 0, 'fallback issues no per-key LIKE sc
 olimc_scan_assert( $fallback['queries'] < 400, 'fallback query count stays batched (' . $fallback['queries'] . ' queries)' );
 olimc_scan_assert( $fallback['seconds'] < 60, 'fallback finishes in reasonable time (' . round( $fallback['seconds'], 2 ) . 's)' );
 echo 'Fallback: ' . $fallback['queries'] . ' queries in ' . round( $fallback['seconds'], 2 ) . "s\n";
+olimc_scan_assert( ! isset( $fallback['state']['used'][51] ), 'fallback ignores the plugin transient' );
+olimc_scan_assert( ! isset( $fallback['state']['used'][52] ), 'fallback ignores plugin meta' );
 
 $wpdb->fail_reads = true;
 $engine           = new OLIMC_Acf_Meta_Scanner( new OLIMC_Scanner() );
@@ -455,23 +470,34 @@ $share_pdo = new PDO( 'sqlite::memory:' );
 $share_pdo->setAttribute( PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION );
 $share_pdo->exec( 'CREATE TABLE postmeta (meta_id INTEGER PRIMARY KEY, post_id INTEGER, meta_key TEXT, meta_value TEXT)' );
 $share_insert = $share_pdo->prepare( 'INSERT INTO postmeta (meta_id, post_id, meta_key, meta_value) VALUES (?, ?, ?, ?)' );
+$backup_name = 'lang-lang-backup.jpg';
+$backup_rel  = '2026/02/' . $backup_name;
+$backup_meta = serialize(
+	[
+		'full-orig' => [ 'file' => $backup_name, 'width' => 10, 'height' => 10 ],
+	]
+);
 $share_rows   = [
 	[ 1, 61216, '_wp_attached_file', $pastille ],
 	[ 2, 61216, '_wp_attachment_metadata', $used_meta ],
 	[ 3, 59384, '_wp_attached_file', $pastille ],
 	[ 4, 70001, '_wp_attached_file', $thumb_rel ],
 	[ 5, 80001, '_wp_attached_file', '2024/01/unique-file.jpg' ],
+	[ 6, 61216, '_wp_attachment_backup_sizes', $backup_meta ],
+	[ 7, 70002, '_wp_attached_file', $backup_rel ],
 ];
 foreach ( $share_rows as $row ) {
 	$share_insert->execute( $row );
 }
 $share_db = new OLIMC_Fake_Wpdb( $share_pdo );
 $wpdb     = $share_db;
+OLIMC_Scanner::reset_upload_path_index();
 $share_scanner = new OLIMC_Scanner();
 $share_added   = $share_scanner->ids_sharing_files_with_used( [ 61216 => 1 ] );
 olimc_scan_assert( is_array( $share_added ), 'shared-file lookup succeeds' );
 olimc_scan_assert( isset( $share_added[59384] ), 'duplicate attachment 59384 is used because 61216 uses the same file' );
 olimc_scan_assert( isset( $share_added[70001] ), 'attachment whose file is a size of a used attachment is used' );
+olimc_scan_assert( isset( $share_added[70002] ), 'attachment whose file is a backup size of a used attachment is used' );
 olimc_scan_assert( ! isset( $share_added[80001] ), 'an attachment with its own file stays unused' );
 olimc_scan_assert( ! isset( $share_added[61216] ), 'the already-used attachment is not reported again' );
 $share_likes = 0;
@@ -481,7 +507,7 @@ foreach ( $share_db->queries as $sql ) {
 	}
 }
 olimc_scan_assert( $share_likes === 0, 'shared-file lookup uses no LIKE (' . count( $share_db->queries ) . ' queries)' );
-olimc_scan_assert( count( $share_db->queries ) === 2, 'shared-file lookup is two indexed meta_key queries' );
+olimc_scan_assert( count( $share_db->queries ) === 1, 'shared-file lookup is one indexed meta_key query' );
 $shared_paths = $share_scanner->shared_relative_upload_paths( 59384 );
 olimc_scan_assert( $shared_paths === [ $pastille ], 'delete keeps the file still referenced by attachment 61216' );
 olimc_scan_assert( $share_scanner->shared_relative_upload_paths( 80001 ) === [], 'a unique file may be deleted' );
@@ -495,7 +521,76 @@ olimc_scan_assert(
 	'a different file is not treated as shared'
 );
 $share_db->fail_reads = true;
+OLIMC_Scanner::reset_upload_path_index();
 olimc_scan_assert( $share_scanner->shared_relative_upload_paths( 59384 ) === null, 'a failed shared-file lookup blocks physical deletion' );
+$share_db->fail_reads = false;
+OLIMC_Scanner::reset_upload_path_index();
+
+require_once dirname( __DIR__ ) . '/includes/class-admin.php';
+
+if ( ! function_exists( 'remove_action' ) ) {
+	/**
+	 * @param string   $tag      Hook name.
+	 * @param callable $callback Callback.
+	 * @param int      $priority Priority.
+	 */
+	function remove_action( $tag, $callback, $priority = 10 ) {
+		$GLOBALS['olimc_removed_actions'][] = [ $tag, $callback, (int) $priority ];
+		if ( isset( $GLOBALS['wp_filter'][ $tag ] ) && is_object( $GLOBALS['wp_filter'][ $tag ] ) ) {
+			unset( $GLOBALS['wp_filter'][ $tag ]->callbacks[ (int) $priority ] );
+		}
+	}
+}
+
+$imagify_ran = [];
+$imagify     = function ( $post_id ) use ( &$imagify_ran ) {
+	$imagify_ran[] = (int) $post_id;
+};
+$simulate_delete = function ( $post_id ) use ( $imagify ) {
+	$post = (object) [
+		'ID'        => (int) $post_id,
+		'post_type' => 'attachment',
+	];
+	$decision = OLIMC_Admin::pre_delete_attachment( null, $post, true );
+	if ( false === $decision ) {
+		return false;
+	}
+	$imagify( $post_id );
+	return true;
+};
+olimc_scan_assert( $simulate_delete( 59384 ) === false, 'shared attachment deletion is refused before Imagify' );
+olimc_scan_assert( $imagify_ran === [], 'Imagify delete_attachment hook does not run for a shared file' );
+olimc_scan_assert( OLIMC_Admin::pre_trash_post( null, (object) [ 'ID' => 59384, 'post_type' => 'attachment' ], 'inherit' ) === false, 'a shared attachment cannot be trashed' );
+$unique_abs = '/var/www/html/wp-content/uploads/2024/01/unique-file.jpg';
+olimc_scan_assert( $simulate_delete( 80001 ) === true, 'a unique attachment can still be deleted' );
+olimc_scan_assert( $imagify_ran === [ 80001 ], 'Imagify still runs for an attachment with its own file' );
+olimc_scan_assert( OLIMC_Admin::pre_trash_post( null, (object) [ 'ID' => 80001, 'post_type' => 'attachment' ], 'inherit' ) === null, 'a unique attachment can be trashed' );
+
+OLIMC_Scanner::reset_upload_path_index();
+$share_db->fail_reads = false;
+olimc_scan_assert( OLIMC_Admin::preserve_shared_upload_file( $absolute ) === '', 'wp_delete_file keeps a shared original from any caller' );
+olimc_scan_assert( OLIMC_Admin::preserve_shared_upload_file( $absolute . '.webp' ) === '', 'wp_delete_file keeps the WebP sibling of a shared file' );
+olimc_scan_assert( OLIMC_Admin::preserve_shared_upload_file( $absolute . '.avif' ) === '', 'wp_delete_file keeps the AVIF sibling of a shared file' );
+olimc_scan_assert( OLIMC_Admin::preserve_shared_upload_file( $unique_abs ) === $unique_abs, 'wp_delete_file still removes a file that only one attachment uses' );
+
+$hook = new stdClass();
+$hook->callbacks = [
+	10 => [
+		'imagify_delete' => [ 'function' => $imagify ],
+	],
+];
+$GLOBALS['wp_filter']['delete_attachment'] = $hook;
+$GLOBALS['olimc_removed_actions']          = [];
+$before_strip                              = count( $imagify_ran );
+OLIMC_Admin::on_delete_attachment( 59384 );
+olimc_scan_assert( isset( $GLOBALS['olimc_removed_actions'][0][0] ) && $GLOBALS['olimc_removed_actions'][0][0] === 'delete_attachment', 'Imagify callback is removed when a shared attachment is deleted' );
+olimc_scan_assert( ! isset( $hook->callbacks[10] ), 'the Imagify callback is gone before it can delete WebP files' );
+olimc_scan_assert( count( $imagify_ran ) === $before_strip, 'removing the Imagify hook does not run it' );
+
+$admin_init = substr( $admin_source, (int) strpos( $admin_source, 'function init' ), 4000 );
+olimc_scan_assert( strpos( $admin_init, "add_filter('pre_delete_attachment'" ) !== false, 'deletion is guarded for every caller' );
+olimc_scan_assert( strpos( $admin_init, "add_filter('pre_trash_post'" ) !== false, 'trash is guarded for every caller' );
+olimc_scan_assert( strpos( $admin_init, "add_filter('wp_delete_file'" ) !== false, 'wp_delete_file is guarded globally' );
 
 if ( $failures > 0 ) {
 	echo "\n{$failures} test(s) failed.\n";
