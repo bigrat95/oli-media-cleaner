@@ -242,6 +242,9 @@ $insert_post = $pdo->prepare( 'INSERT INTO posts (ID, post_type, post_status) VA
 for ( $id = 1; $id <= 10000; $id++ ) {
 	$insert_post->execute( [ $id, 'attachment', 'inherit' ] );
 }
+// Real osm.ca false positives: hyphenated ACF keys, outside the 1..10000 filler set.
+$insert_post->execute( [ 37455, 'attachment', 'inherit' ] );
+$insert_post->execute( [ 37681, 'attachment', 'inherit' ] );
 
 $pdo->beginTransaction();
 for ( $base = 1; $base <= 500000; $base += 500 ) {

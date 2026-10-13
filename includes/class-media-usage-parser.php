@@ -124,14 +124,15 @@ class OLIMC_Media_Usage_Parser {
 			if ( $marker === '' ) {
 				continue;
 			}
-			$pattern = '#' . preg_quote( $marker, '#' ) . '/([^\s"\'<>),;}\\\]]+)#';
+			$pattern = '#' . preg_quote( $marker, '#' ) . '/(\S+)#';
 			if ( ! preg_match_all( $pattern, $text, $matches ) ) {
 				continue;
 			}
 			foreach ( $matches[1] as $path ) {
 				$path = rawurldecode( (string) $path );
 				$path = strtok( $path, '?#' );
-				$path = ltrim( (string) $path, '/' );
+				$path = rtrim( (string) $path, "\"'<>),;}\\]" );
+				$path = ltrim( $path, '/' );
 				if ( $path !== '' ) {
 					$found[] = $path;
 				}

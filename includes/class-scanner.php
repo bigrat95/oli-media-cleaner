@@ -607,7 +607,7 @@ class OLIMC_Scanner {
 
     /**
      * Scan ALL files in the active theme for hardcoded image references.
-     * Checks PHP, CSS, and JS files for wp-content/uploads paths.
+     * Checks PHP, CSS, and JS files for the current upload location.
      */
     private function collect_theme_files() {
         $theme_dir = get_stylesheet_directory();
@@ -624,7 +624,7 @@ class OLIMC_Scanner {
     }
 
     /**
-     * Recursively scan a directory for files referencing wp-content/uploads.
+     * Recursively scan a directory for files referencing the current upload location.
      */
     private function scan_directory_for_uploads($dir) {
         if (!is_dir($dir)) return;
