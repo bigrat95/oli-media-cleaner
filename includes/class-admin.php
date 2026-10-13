@@ -193,12 +193,13 @@ class OLIMC_Admin {
                 'scanning'               => __('Scanning...', 'oli-media-cleaner'),
                 'preparing'              => __('Analyzing your site… this can take a moment.', 'oli-media-cleaner'),
                 'scan_complete'          => __('Scan complete!', 'oli-media-cleaner'),
-                'confirm_trash'          => __('Trash this file?', 'oli-media-cleaner'),
-                'confirm_delete'         => __('Permanently delete this file? This cannot be undone.', 'oli-media-cleaner'),
-                'confirm_bulk_trash'     => __('Trash all selected files?', 'oli-media-cleaner'),
+                'confirm_trash'          => __('Move this file to the Media Trash? You can restore it from the Trash tab before permanently deleting.', 'oli-media-cleaner'),
+                'confirm_delete'         => __('Permanently delete this file? This cannot be undone. Consider a backup first.', 'oli-media-cleaner'),
+                'confirm_bulk_trash'     => __('Move the selected files to the Media Trash? You can restore them from the Trash tab before permanently deleting.', 'oli-media-cleaner'),
                 'confirm_bulk_delete'    => __('Permanently delete the selected files? This cannot be undone. Consider a backup first.', 'oli-media-cleaner'),
+                'confirm_preview_intro'  => __('You are about to affect:', 'oli-media-cleaner'),
                 'no_selection'           => __('No files selected.', 'oli-media-cleaner'),
-                'confirm_trash_all'      => __('Trash ALL unused images? This will process all pages in batches.', 'oli-media-cleaner'),
+                'confirm_trash_all'      => __('Move ALL unused media to the Media Trash in batches? Review the list first. You can restore from the Trash tab before permanently deleting.', 'oli-media-cleaner'),
                 'confirm_empty_trash'    => __('WARNING: This permanently deletes ALL files in the trash. This cannot be undone. Back up your site (or at least wp-content/uploads) before continuing. Empty the trash now?', 'oli-media-cleaner'),
                 'confirm_remove_whitelist' => __('Remove selected items from whitelist?', 'oli-media-cleaner'),
                 'confirm_remove_whitelist_all' => __('Remove ALL items from the whitelist? They will appear again as unused on the next scan.', 'oli-media-cleaner'),
@@ -360,7 +361,7 @@ class OLIMC_Admin {
             </div>
 
             <div class="postbox" style="margin-top:30px;">
-                <div class="postbox-header"><h2 style="padding:8px 12px;margin:0;"><?php esc_html_e('Scheduled Auto-Cleanup', 'oli-media-cleaner'); ?></h2></div>
+                <div class="postbox-header"><h2 style="padding:8px 12px;margin:0;"><?php esc_html_e('Scheduled Scan', 'oli-media-cleaner'); ?></h2></div>
                 <div class="inside">
                     <?php
                     $cron_enabled = get_option('olimc_cron_enabled', false);
@@ -369,11 +370,11 @@ class OLIMC_Admin {
                     ?>
                     <table class="form-table">
                         <tr>
-                            <th><?php esc_html_e('Enable Auto-Cleanup', 'oli-media-cleaner'); ?></th>
+                            <th><?php esc_html_e('Enable Scheduled Scan', 'oli-media-cleaner'); ?></th>
                             <td>
                                 <label>
                                     <input type="checkbox" id="olimc-cron-enabled" <?php checked($cron_enabled); ?>>
-                                    <?php esc_html_e('Automatically scan and trash unused images on a schedule', 'oli-media-cleaner'); ?>
+                                    <?php esc_html_e('Automatically scan for unused images on a schedule (results only — nothing is deleted without your confirmation in the admin)', 'oli-media-cleaner'); ?>
                                 </label>
                             </td>
                         </tr>
@@ -635,7 +636,8 @@ class OLIMC_Admin {
             $thumb = self::get_thumb_html($item);
             $edit_url = admin_url("post.php?post={$id}&action=edit");
 
-            echo '<tr data-id="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '">';
+            $basename = wp_basename( $item['url'] ?? '' );
+            echo '<tr data-id="' . esc_attr( $id ) . '" data-size="' . esc_attr( $item['file_size'] ) . '" data-filename="' . esc_attr( $basename ) . '">';
             echo '<th class="check-column"><input type="checkbox" class="olimc-item-cb" value="' . esc_attr($id) . '" data-size="' . esc_attr($item['file_size']) . '"></th>';
             echo '<td>' . wp_kses_post( $thumb ) . '</td>';
             echo '<td><strong>' . esc_html($item['title']) . '</strong><br><span class="description">' . esc_html(wp_basename($item['url'] ?? '')) . '</span></td>';
@@ -1308,20 +1310,19 @@ class OLIMC_Admin {
         wp_send_json_success([
             'message'  => $enabled
                 /* translators: %1$s: frequency label, %2$s: next run date */
-                ? sprintf(__('Auto-cleanup enabled (%1$s). Next run: %2$s', 'oli-media-cleaner'), $frequency_label, $next_run)
-                : __('Auto-cleanup disabled.', 'oli-media-cleaner'),
+                ? sprintf(__('Scheduled scan enabled (%1$s). Next run: %2$s', 'oli-media-cleaner'), $frequency_label, $next_run)
+                : __('Scheduled scan disabled.', 'oli-media-cleaner'),
             'next_run' => $next_run ?: __('Not scheduled', 'oli-media-cleaner'),
         ]);
     }
 
     /**
-     * Cron callback: scan + trash unused images.
+     * Cron callback: scan only — never trash or delete media automatically.
      */
     public static function run_scheduled_cleanup() {
         $scanner = new OLIMC_Scanner();
         $used_ids = $scanner->collect_used_ids();
         $whitelist = get_option('olimc_whitelist', []);
-        $total = $scanner->get_total_attachment_count();
 
         global $wpdb;
         $batch_size = 100;
@@ -1338,7 +1339,9 @@ class OLIMC_Admin {
                 $batch_size, $offset
             ));
 
-            if (empty($attachment_ids)) break;
+            if (empty($attachment_ids)) {
+                break;
+            }
 
             foreach ($attachment_ids as $id) {
                 $id = (int) $id;
@@ -1346,17 +1349,17 @@ class OLIMC_Admin {
                     $info = $scanner->get_attachment_info($id);
                     if ($info) {
                         $all_unused[] = $info;
-                        wp_trash_post($id);
                     }
                 }
             }
 
             $offset += $batch_size;
-            if (count($attachment_ids) < $batch_size) break;
+            if (count($attachment_ids) < $batch_size) {
+                break;
+            }
         }
 
-        // Update scan results and date
-        update_option('olimc_scan_results', [], false);
+        update_option('olimc_scan_results', $all_unused, false);
         update_option('olimc_scan_date', current_time('mysql'), false);
     }
 

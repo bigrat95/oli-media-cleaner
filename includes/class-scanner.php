@@ -5,6 +5,8 @@ class OLIMC_Scanner {
 
     private $used_ids = [];
     private $path_cache = [];
+    /** @var array<int, true>|null */
+    private $attachment_id_index = null;
 
     /**
      * Run a full scan. Returns array of unused attachment IDs.
@@ -37,6 +39,10 @@ class OLIMC_Scanner {
      */
     public function collect_used_ids() {
         $this->used_ids = [];
+        $this->ensure_attachment_lookup();
+
+        $acf_meta = new OLIMC_Acf_Meta_Scanner( $this );
+        $acf_meta->collect_all();
 
         $this->collect_featured_images();
         $this->collect_post_content_images();
@@ -64,6 +70,56 @@ class OLIMC_Scanner {
      */
     public function is_used($attachment_id) {
         return in_array((int) $attachment_id, $this->used_ids, true);
+    }
+
+    /**
+     * Merge attachment IDs discovered by meta parsers.
+     *
+     * @param int[]|int|string $ids Attachment ID or list of IDs.
+     */
+    public function merge_used_attachment_ids( $ids ) {
+        if ( ! is_array( $ids ) ) {
+            $ids = [ $ids ];
+        }
+        foreach ( $ids as $id ) {
+            $id = (int) $id;
+            if ( $id > 0 ) {
+                $this->used_ids[] = $id;
+            }
+        }
+    }
+
+    /**
+     * Build a lookup of valid attachment post IDs (for safe generic meta matching).
+     */
+    public function ensure_attachment_lookup() {
+        if ( null !== $this->attachment_id_index ) {
+            return;
+        }
+        global $wpdb;
+        $ids = $wpdb->get_col(
+            "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment'"
+        );
+        $this->attachment_id_index = array_fill_keys( array_map( 'intval', $ids ), true );
+    }
+
+    /**
+     * @param int $id Attachment ID.
+     * @return bool
+     */
+    public function is_known_attachment_id( $id ) {
+        $this->ensure_attachment_lookup();
+        return isset( $this->attachment_id_index[ (int) $id ] );
+    }
+
+    /**
+     * Resolve a relative uploads path to an attachment ID (for parsers).
+     *
+     * @param string $path Upload path relative to wp-content/uploads.
+     * @return int
+     */
+    public function resolve_upload_path_to_id( $path ) {
+        return (int) $this->find_attachment_by_path( $path );
     }
 
     /**
@@ -195,18 +251,7 @@ class OLIMC_Scanner {
 
     private function collect_postmeta_images() {
         global $wpdb;
-        // Find attachment IDs stored in postmeta (numeric values that are valid attachments)
-        // This catches ACF image fields stored as IDs, WooCommerce product images, etc.
-        $rows = $wpdb->get_col(
-            "SELECT DISTINCT meta_value FROM {$wpdb->postmeta}
-             WHERE meta_value REGEXP '^[0-9]+$'
-             AND meta_value > 0
-             AND meta_key NOT IN ('_edit_lock', '_edit_last', '_wp_old_date', '_price', '_regular_price', '_sale_price', '_stock', '_weight', '_length', '_width', '_height', 'total_sales', '_product_version', '_wp_page_template')
-             AND CAST(meta_value AS UNSIGNED) IN (
-                SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment'
-             )"
-        );
-        $this->used_ids = array_merge($this->used_ids, $rows);
+        // Numeric attachment IDs in postmeta are collected by OLIMC_Acf_Meta_Scanner (JOIN-based, ACF-safe).
 
         // Find URLs in postmeta
         $url_rows = $wpdb->get_col(
@@ -614,36 +659,19 @@ class OLIMC_Scanner {
      * Extract attachment IDs from serialized data recursively.
      */
     private function extract_ids_from_serialized($val) {
-        $data = @unserialize($val);
-        if (!is_array($data)) return;
-
-        foreach ($data as $key => $item) {
-            if (is_array($item)) {
-                if (isset($item['id']) && is_numeric($item['id'])) {
-                    $this->used_ids[] = (int) $item['id'];
-                }
-                if (isset($item['ID']) && is_numeric($item['ID'])) {
-                    $this->used_ids[] = (int) $item['ID'];
-                }
-                if (isset($item['url']) && strpos($item['url'], 'wp-content/uploads') !== false) {
-                    if (preg_match('#wp-content/uploads/([^\s"\'\'<>,;}\]]+)#', $item['url'], $m)) {
-                        $fid = $this->find_attachment_by_path($m[1]);
-                        if ($fid) $this->used_ids[] = $fid;
-                    }
-                }
-                // Recurse
-                $this->extract_ids_from_serialized(serialize($item));
-            } elseif (is_numeric($item) && (int)$item > 0) {
-                // Could be gallery array of IDs
-            }
-        }
+        $this->merge_used_attachment_ids(
+            OLIMC_Media_Usage_Parser::extract_attachment_ids_from_value(
+                $val,
+                [ $this, 'resolve_upload_path_to_id' ],
+                [ $this, 'is_known_attachment_id' ]
+            )
+        );
     }
 
     /**
      * Scan ACF Options pages — data stored in wp_options with 'options_' prefix.
      */
     private function collect_acf_option_pages() {
-        if (!function_exists('acf_get_field_groups')) return;
         global $wpdb;
 
         // ACF options are stored in wp_options as options_{field_name}
@@ -794,25 +822,44 @@ class OLIMC_Scanner {
      */
     private function collect_serialized_postmeta() {
         global $wpdb;
-        // Find serialized arrays that contain upload references
-        $rows = $wpdb->get_col(
-            "SELECT meta_value FROM {$wpdb->postmeta}
-             WHERE meta_value LIKE 'a:%'
-             AND meta_value LIKE '%wp-content/uploads%'
-             AND meta_key NOT LIKE '_transient%'
-             LIMIT 5000"
-        );
+        $batch  = 500;
+        $offset = 0;
+        $uploads = '%' . $wpdb->esc_like( 'wp-content/uploads' ) . '%';
 
-        foreach ($rows as $val) {
-            // Extract all upload paths from the serialized string
-            if (preg_match_all('#wp-content/uploads/([^\s"\'\'<>,;}\\\]]+)#', $val, $matches)) {
-                foreach ($matches[1] as $path) {
-                    $id = $this->find_attachment_by_path($path);
-                    if ($id) $this->used_ids[] = $id;
-                }
+        while ( true ) {
+            $rows = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT meta_value FROM {$wpdb->postmeta}
+                     WHERE ( meta_value LIKE 'a:%' OR meta_value LIKE %s OR meta_value LIKE '[%' OR meta_value LIKE '{%' )
+                     AND meta_key NOT LIKE %s
+                     LIMIT %d OFFSET %d",
+                    $uploads,
+                    $wpdb->esc_like( '_transient' ) . '%',
+                    $batch,
+                    $offset
+                )
+            );
+
+            if ( empty( $rows ) ) {
+                break;
             }
-            // Also extract numeric IDs from serialized data
-            $this->extract_ids_from_serialized($val);
+
+            foreach ( $rows as $val ) {
+                if ( preg_match_all( '#wp-content/uploads/([^\s"\'\'<>,;}\\\]]+)#', $val, $matches ) ) {
+                    foreach ( $matches[1] as $path ) {
+                        $id = $this->find_attachment_by_path( $path );
+                        if ( $id ) {
+                            $this->used_ids[] = $id;
+                        }
+                    }
+                }
+                $this->extract_ids_from_serialized( $val );
+            }
+
+            if ( count( $rows ) < $batch ) {
+                break;
+            }
+            $offset += $batch;
         }
     }
 

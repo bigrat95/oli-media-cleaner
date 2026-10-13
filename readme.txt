@@ -5,7 +5,7 @@ Tags: media, cleanup, unused images, media cleaner, disk space
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.5.15
+Stable tag: 1.5.16
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -104,6 +104,12 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 4. Scan sources information panel
 
 == Changelog ==
+
+= 1.5.16 =
+* FIX: Reliable ACF attachment detection from raw post meta (including `_field` references), even when ACF is inactive — fixes false “unused” results for CPT fields such as concert `image` (ID, array, and URL return formats)
+* FIX: Gallery and repeater/flexible/clone sub-fields, options pages, term meta, and user meta are scanned with a generic fallback for any attachment ID stored in meta
+* CHANGE: Scheduled auto-cleanup now runs a scan only; media are never trashed or deleted automatically (manual confirmation still required in the admin)
+* CHANGE: Trash and delete confirmations show a filename preview; trash actions remind you that files go to Media Trash first
 
 = 1.5.15 =
 * NEW: CSV export includes a Status column (Unused / Whitelist / Trash) and exports all three categories in one file so you can filter/categorize in a spreadsheet. Search, type filter, and sort still apply.
@@ -211,6 +217,9 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 * Native WordPress admin UI — no external dependencies
 
 == Upgrade Notice ==
+
+= 1.5.16 =
+Critical fix for ACF image/file usage detection; scheduled tasks no longer trash media automatically.
 
 = 1.5.15 =
 CSV export now includes a Status column and covers Unused, Whitelist, and Trash in one file.
