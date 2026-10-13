@@ -93,6 +93,33 @@ $repeater_value = '61309';
 $ids            = OLIMC_Media_Usage_Parser::extract_attachment_ids_from_value( $repeater_value, $resolve_path, $is_attachment );
 olimc_test_assert( in_array( 61309, $ids, true ), 'nested repeater image sub-field (numeric ID)' );
 
+// HTML must not keep the tag, query, or fragment after the upload URL.
+$pdf_path = '2025/12/16_12_2025_extraits-immersion-orchestrale-2026.pdf';
+$photo    = '2026/02/photo.jpg';
+$html_cases = [
+	'<a href="https://osm.ca/wp-content/uploads/' . $pdf_path . '">extraits</a>' => [ $pdf_path ],
+	'<img src="https://osm.ca/wp-content/uploads/' . $photo . '" alt="">'          => [ $photo ],
+	"<img src='https://osm.ca/wp-content/uploads/{$photo}' alt=''>"               => [ $photo ],
+	'<img srcset="https://osm.ca/wp-content/uploads/' . $photo . ' 1080w, https://osm.ca/wp-content/uploads/2026/02/photo-300x300.jpg 300w">' => [ $photo, '2026/02/photo-300x300.jpg' ],
+	'See <https://osm.ca/wp-content/uploads/' . $photo . '>'                       => [ $photo ],
+	'url(https://osm.ca/wp-content/uploads/' . $photo . ')'                        => [ $photo ],
+	'https://osm.ca/wp-content/uploads/' . $photo . '?ver=2'                       => [ $photo ],
+	'https://osm.ca/wp-content/uploads/' . $photo . '#page=2'                      => [ $photo ],
+];
+foreach ( $html_cases as $html => $expected_paths ) {
+	$paths = OLIMC_Media_Usage_Parser::relative_upload_paths( $html );
+	sort( $paths );
+	$expect = $expected_paths;
+	sort( $expect );
+	olimc_test_assert( $paths === $expect, 'upload path stops at HTML delimiter: ' . $html );
+}
+$resolve_pdf = function ( $path ) use ( $pdf_path ) {
+	return $path === $pdf_path ? 57912 : 0;
+};
+$linked = '<a href="https://osm.ca/wp-content/uploads/' . $pdf_path . '">extraits</a>';
+$ids    = OLIMC_Media_Usage_Parser::extract_attachment_ids_from_value( $linked, $resolve_pdf, $is_attachment );
+olimc_test_assert( $ids === [ 57912 ], 'linked PDF in published HTML resolves to attachment 57912' );
+
 // Bedrock (osm.ca) serves /app/uploads. Markers come from wp_upload_dir(), never a fixed directory.
 $bedrock = OLIMC_Media_Usage_Parser::markers_from_upload_dir(
 	[

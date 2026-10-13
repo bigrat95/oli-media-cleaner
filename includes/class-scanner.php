@@ -751,6 +751,240 @@ class OLIMC_Scanner {
         }
     }
 
+    /**
+     * Attachment IDs that are not in $used but share an upload path with one that is.
+     *
+     * Paths are the attached file and generated sizes (including original_image).
+     * Null means the lookup failed; the caller must not mark anything unused.
+     *
+     * @param array<int, mixed> $used Used attachment IDs.
+     * @return array<int, int>|null Map of attachment ID => 1, or null on database error.
+     */
+    public function ids_sharing_files_with_used(array $used) {
+        $normalized = [];
+        foreach ($used as $id => $_unused) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $normalized[$id] = 1;
+            }
+        }
+        if ($normalized === []) {
+            return [];
+        }
+        $index = $this->upload_path_index();
+        if ($index === null) {
+            return null;
+        }
+        $added = [];
+        $guard = 0;
+        do {
+            $changed = false;
+            $guard++;
+            foreach ($index as $ids) {
+                if (count($ids) < 2) {
+                    continue;
+                }
+                $hit = false;
+                foreach ($ids as $id) {
+                    if (isset($normalized[$id]) || isset($added[$id])) {
+                        $hit = true;
+                        break;
+                    }
+                }
+                if (!$hit) {
+                    continue;
+                }
+                foreach ($ids as $id) {
+                    if (!isset($normalized[$id]) && !isset($added[$id])) {
+                        $added[$id] = 1;
+                        $changed = true;
+                    }
+                }
+            }
+        } while ($changed && $guard < 10);
+        return $added;
+    }
+
+    /**
+     * Relative upload paths of this attachment that another attachment also references.
+     *
+     * Null means the lookup failed. Callers must not unlink files in that case.
+     *
+     * @param int $attachment_id Attachment ID.
+     * @return string[]|null
+     */
+    public function shared_relative_upload_paths($attachment_id) {
+        $attachment_id = (int) $attachment_id;
+        $index = $this->upload_path_index();
+        if ($index === null) {
+            return null;
+        }
+        $shared = [];
+        foreach ($index as $path => $ids) {
+            if (count($ids) > 1 && in_array($attachment_id, $ids, true)) {
+                $shared[] = $path;
+            }
+        }
+        return $shared;
+    }
+
+    /**
+     * Whether an absolute filesystem path is one of the relative upload paths.
+     *
+     * @param string   $absolute  Absolute path passed to wp_delete_file.
+     * @param string[] $relatives Paths relative to the uploads directory.
+     * @return bool
+     */
+    public static function absolute_path_matches_relative($absolute, array $relatives) {
+        $absolute = str_replace('\\', '/', (string) $absolute);
+        foreach ($relatives as $relative) {
+            $relative = ltrim(str_replace('\\', '/', (string) $relative), '/');
+            if ($relative === '') {
+                continue;
+            }
+            $suffix = '/' . $relative;
+            if (substr($absolute, -strlen($suffix)) === $suffix) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * path => attachment IDs that reference it (original file or a size).
+     *
+     * @return array<string, int[]>|null
+     */
+    private function upload_path_index() {
+        global $wpdb;
+        $wpdb->last_error = '';
+        $files = $wpdb->get_results($wpdb->prepare(
+            "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value != ''",
+            '_wp_attached_file'
+        ));
+        if (!empty($wpdb->last_error) || !is_array($files)) {
+            return null;
+        }
+        $meta_rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value != ''",
+            '_wp_attachment_metadata'
+        ));
+        if (!empty($wpdb->last_error) || !is_array($meta_rows)) {
+            return null;
+        }
+
+        $attached = [];
+        foreach ($files as $row) {
+            $attached[(int) $row->post_id] = (string) $row->meta_value;
+        }
+        $metadata = [];
+        foreach ($meta_rows as $row) {
+            $metadata[(int) $row->post_id] = $row->meta_value;
+        }
+        $index = [];
+        $ids = array_unique(array_merge(array_keys($attached), array_keys($metadata)));
+        foreach ($ids as $id) {
+            $paths = $this->relative_paths_for_attachment_row(
+                isset($attached[$id]) ? $attached[$id] : '',
+                isset($metadata[$id]) ? $metadata[$id] : ''
+            );
+            foreach ($paths as $path) {
+                $index[$path][] = (int) $id;
+            }
+        }
+        foreach ($index as $path => $list) {
+            $index[$path] = array_values(array_unique($list));
+        }
+        return $index;
+    }
+
+    /**
+     * @param string $attached_file _wp_attached_file value.
+     * @param mixed  $meta_value    Raw _wp_attachment_metadata value.
+     * @return string[]
+     */
+    private function relative_paths_for_attachment_row($attached_file, $meta_value) {
+        $paths = [];
+        $attached_file = $this->normalize_relative_upload_path($attached_file);
+        if ($attached_file !== '') {
+            $paths[] = $attached_file;
+        }
+        $meta = $this->decode_attachment_meta($meta_value);
+        $base = $attached_file;
+        if (is_array($meta) && !empty($meta['file']) && is_string($meta['file'])) {
+            $file = $this->normalize_relative_upload_path($meta['file']);
+            if ($file !== '') {
+                $paths[] = $file;
+                $base = $file;
+            }
+        }
+        $dir = ($base !== '' && strpos($base, '/') !== false) ? dirname($base) : '';
+        if ($dir === '.') {
+            $dir = '';
+        }
+        if (is_array($meta) && !empty($meta['original_image']) && is_string($meta['original_image'])) {
+            $paths[] = $this->join_upload_dir($dir, $meta['original_image']);
+        }
+        if (is_array($meta) && !empty($meta['sizes']) && is_array($meta['sizes'])) {
+            foreach ($meta['sizes'] as $size) {
+                if (is_array($size) && !empty($size['file']) && is_string($size['file'])) {
+                    $paths[] = $this->join_upload_dir($dir, $size['file']);
+                }
+            }
+        }
+        $out = [];
+        foreach ($paths as $path) {
+            $path = $this->normalize_relative_upload_path($path);
+            if ($path !== '') {
+                $out[] = $path;
+            }
+        }
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * @param mixed $value Meta value.
+     * @return array|null
+     */
+    private function decode_attachment_meta($value) {
+        if (is_array($value)) {
+            return $value;
+        }
+        if (!is_string($value) || $value === '') {
+            return null;
+        }
+        $data = function_exists('maybe_unserialize') ? maybe_unserialize($value) : @unserialize($value);
+        return is_array($data) ? $data : null;
+    }
+
+    /**
+     * @param string $dir  Directory relative to uploads.
+     * @param string $file File name or relative path.
+     * @return string
+     */
+    private function join_upload_dir($dir, $file) {
+        $file = $this->normalize_relative_upload_path($file);
+        if ($file === '') {
+            return '';
+        }
+        if ($dir === '' || strpos($file, '/') !== false) {
+            return $file;
+        }
+        return $dir . '/' . $file;
+    }
+
+    /**
+     * @param string $path Upload path.
+     * @return string
+     */
+    private function normalize_relative_upload_path($path) {
+        if (!is_string($path)) {
+            return '';
+        }
+        $path = str_replace('\\', '/', trim($path));
+        return ltrim($path, '/');
+    }
+
     // ─── Utility ──────────────────────────────────────────────────────
 
     /**

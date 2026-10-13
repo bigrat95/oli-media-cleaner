@@ -1000,6 +1000,35 @@ class OLIMC_Admin {
     }
 
     /**
+     * Permanently delete one attachment, leaving files that another attachment still references.
+     *
+     * When the shared-file lookup fails, no file is unlinked.
+     *
+     * @param int $post_id Attachment ID.
+     * @return mixed Result of wp_delete_attachment().
+     */
+    private static function delete_attachment_preserve_shared_files($post_id) {
+        $post_id = (int) $post_id;
+        $scanner = new OLIMC_Scanner();
+        $shared  = $scanner->shared_relative_upload_paths($post_id);
+        $filter  = static function ($file) use ($shared) {
+            if (!is_string($file) || $file === '') {
+                return $file;
+            }
+            if ($shared === null || OLIMC_Scanner::absolute_path_matches_relative($file, $shared)) {
+                return '';
+            }
+            return $file;
+        };
+        add_filter('wp_delete_file', $filter, 100);
+        try {
+            return wp_delete_attachment($post_id, true);
+        } finally {
+            remove_filter('wp_delete_file', $filter, 100);
+        }
+    }
+
+    /**
      * Permanently delete a single file.
      */
     public static function ajax_delete_single() {
@@ -1008,7 +1037,7 @@ class OLIMC_Admin {
         $post_id = (int) ($_POST['post_id'] ?? 0);
         if (!$post_id) wp_send_json_error(__('Invalid ID.', 'oli-media-cleaner'));
 
-        $result = wp_delete_attachment($post_id, true);
+        $result = self::delete_attachment_preserve_shared_files($post_id);
         if ($result) {
             self::remove_from_scan_results($post_id);
             wp_send_json_success(['message' => __('File permanently deleted.', 'oli-media-cleaner')]);
@@ -1025,7 +1054,7 @@ class OLIMC_Admin {
         $ids = array_map('intval', $_POST['ids'] ?? []);
         $deleted = 0;
         foreach ($ids as $id) {
-            if (wp_delete_attachment($id, true)) {
+            if (self::delete_attachment_preserve_shared_files($id)) {
                 self::remove_from_scan_results($id);
                 $deleted++;
             }
@@ -1233,7 +1262,7 @@ class OLIMC_Admin {
         $deleted = 0;
 
         foreach ($trashed_ids as $id) {
-            if (wp_delete_attachment((int) $id, true)) {
+            if (self::delete_attachment_preserve_shared_files((int) $id)) {
                 $deleted++;
             }
         }

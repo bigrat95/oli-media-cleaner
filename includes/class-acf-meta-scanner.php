@@ -532,6 +532,19 @@ class OLIMC_Acf_Meta_Scanner {
 	private function phase_classify( array &$state ) {
 		global $wpdb;
 
+		if ( empty( $state['shared_files_applied'] ) ) {
+			$used   = isset( $state['used'] ) && is_array( $state['used'] ) ? $state['used'] : [];
+			$shared = $this->scanner->ids_sharing_files_with_used( $used );
+			if ( $shared === null ) {
+				$this->fail( $state, 'Shared file scan failed.' );
+				return;
+			}
+			foreach ( $shared as $id => $_unused ) {
+				$state['used'][ (int) $id ] = 1;
+			}
+			$state['shared_files_applied'] = 1;
+		}
+
 		$batch  = 40;
 		$offset = (int) $state['cursor'];
 		$wpdb->last_error = '';

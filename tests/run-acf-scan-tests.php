@@ -440,6 +440,63 @@ $engine_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-acf-me
 olimc_scan_assert( strpos( $engine_source, 'function is_safe_meta_key' ) === false, 'meta keys are no longer filtered by a character whitelist' );
 olimc_scan_assert( strpos( $engine_source, 'generic_post' ) !== false, 'ACF mode still walks non-ACF meta' );
 
+$pastille = '2026/02/lang-lang-1080x1080-osm-2026-2027-en-pastille.jpg';
+$thumb    = 'lang-lang-1080x1080-osm-2026-2027-en-pastille-150x150.jpg';
+$thumb_rel = '2026/02/' . $thumb;
+$used_meta = serialize(
+	[
+		'file'  => $pastille,
+		'sizes' => [
+			'thumbnail' => [ 'file' => $thumb ],
+		],
+	]
+);
+$share_pdo = new PDO( 'sqlite::memory:' );
+$share_pdo->setAttribute( PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION );
+$share_pdo->exec( 'CREATE TABLE postmeta (meta_id INTEGER PRIMARY KEY, post_id INTEGER, meta_key TEXT, meta_value TEXT)' );
+$share_insert = $share_pdo->prepare( 'INSERT INTO postmeta (meta_id, post_id, meta_key, meta_value) VALUES (?, ?, ?, ?)' );
+$share_rows   = [
+	[ 1, 61216, '_wp_attached_file', $pastille ],
+	[ 2, 61216, '_wp_attachment_metadata', $used_meta ],
+	[ 3, 59384, '_wp_attached_file', $pastille ],
+	[ 4, 70001, '_wp_attached_file', $thumb_rel ],
+	[ 5, 80001, '_wp_attached_file', '2024/01/unique-file.jpg' ],
+];
+foreach ( $share_rows as $row ) {
+	$share_insert->execute( $row );
+}
+$share_db = new OLIMC_Fake_Wpdb( $share_pdo );
+$wpdb     = $share_db;
+$share_scanner = new OLIMC_Scanner();
+$share_added   = $share_scanner->ids_sharing_files_with_used( [ 61216 => 1 ] );
+olimc_scan_assert( is_array( $share_added ), 'shared-file lookup succeeds' );
+olimc_scan_assert( isset( $share_added[59384] ), 'duplicate attachment 59384 is used because 61216 uses the same file' );
+olimc_scan_assert( isset( $share_added[70001] ), 'attachment whose file is a size of a used attachment is used' );
+olimc_scan_assert( ! isset( $share_added[80001] ), 'an attachment with its own file stays unused' );
+olimc_scan_assert( ! isset( $share_added[61216] ), 'the already-used attachment is not reported again' );
+$share_likes = 0;
+foreach ( $share_db->queries as $sql ) {
+	if ( stripos( $sql, 'LIKE' ) !== false ) {
+		$share_likes++;
+	}
+}
+olimc_scan_assert( $share_likes === 0, 'shared-file lookup uses no LIKE (' . count( $share_db->queries ) . ' queries)' );
+olimc_scan_assert( count( $share_db->queries ) === 2, 'shared-file lookup is two indexed meta_key queries' );
+$shared_paths = $share_scanner->shared_relative_upload_paths( 59384 );
+olimc_scan_assert( $shared_paths === [ $pastille ], 'delete keeps the file still referenced by attachment 61216' );
+olimc_scan_assert( $share_scanner->shared_relative_upload_paths( 80001 ) === [], 'a unique file may be deleted' );
+$absolute = '/var/www/html/wp-content/uploads/' . $pastille;
+olimc_scan_assert(
+	OLIMC_Scanner::absolute_path_matches_relative( $absolute, $shared_paths ),
+	'wp_delete_file path matches the shared relative upload'
+);
+olimc_scan_assert(
+	! OLIMC_Scanner::absolute_path_matches_relative( '/var/www/html/wp-content/uploads/2024/01/unique-file.jpg', $shared_paths ),
+	'a different file is not treated as shared'
+);
+$share_db->fail_reads = true;
+olimc_scan_assert( $share_scanner->shared_relative_upload_paths( 59384 ) === null, 'a failed shared-file lookup blocks physical deletion' );
+
 if ( $failures > 0 ) {
 	echo "\n{$failures} test(s) failed.\n";
 	exit( 1 );
