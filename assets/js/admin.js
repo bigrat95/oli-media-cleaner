@@ -341,9 +341,17 @@
                     return;
                 }
 
-                var pct = Math.min(100, Math.round((res.data.processed / total) * 100));
+                var pct = (typeof res.data.percent === 'number')
+                    ? res.data.percent
+                    : (total > 0 ? Math.min(100, Math.round((res.data.processed / total) * 100)) : 0);
                 $fill.css('width', pct + '%');
-                $text.text(self.format(self.str('unused_found_progress'), pct, res.data.unused_found));
+                if (res.data.done) {
+                    $text.text(self.format(self.str('unused_found_progress'), pct, res.data.unused_found));
+                } else if (res.data.message) {
+                    $text.text(pct + '% — ' + res.data.message);
+                } else {
+                    $text.text(self.format(self.str('unused_found_progress'), pct, res.data.unused_found));
+                }
 
                 if (res.data.done) {
                     $fill.css('width', '100%');

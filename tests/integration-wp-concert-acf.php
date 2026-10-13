@@ -18,6 +18,32 @@ if ( ! class_exists( 'OLIMC_Scanner' ) ) {
 	exit( 1 );
 }
 
+if ( function_exists( 'acf_add_local_field_group' ) ) {
+	acf_add_local_field_group(
+		[
+			'key'      => 'group_olimc_test_concert',
+			'title'    => 'OLIMC test concert',
+			'fields'   => [
+				[
+					'key'   => 'field_olimc_test_image',
+					'label' => 'Image',
+					'name'  => 'image',
+					'type'  => 'image',
+				],
+			],
+			'location' => [
+				[
+					[
+						'param'    => 'post_type',
+						'operator' => '==',
+						'value'    => 'concert',
+					],
+				],
+			],
+		]
+	);
+}
+
 if ( ! post_type_exists( 'concert' ) ) {
 	register_post_type(
 		'concert',

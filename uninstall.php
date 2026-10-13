@@ -13,6 +13,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 delete_option( 'olimc_version' );
 delete_option( 'olimc_scan_results' );
 delete_option( 'olimc_scan_used_ids' );
+delete_option( 'olimc_scan_state' );
 delete_option( 'olimc_scan_date' );
 delete_option( 'olimc_whitelist' );
 delete_option( 'olimc_cron_enabled' );

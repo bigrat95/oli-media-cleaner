@@ -59,6 +59,7 @@ class OLIMC_Admin {
     public static function deactivate() {
         delete_option('olimc_scan_results');
         delete_option('olimc_scan_used_ids');
+        delete_option('olimc_scan_state');
         delete_option('olimc_scan_date');
         wp_clear_scheduled_hook('olimc_scheduled_cleanup');
     }
@@ -696,82 +697,79 @@ class OLIMC_Admin {
     }
 
     /**
-     * Step 1: Start scan — collect used IDs (heavy query, done once).
+     * Step 1: Start a resumable scan. Does not decide unused media yet.
      */
     public static function ajax_start_scan() {
         self::verify_request();
 
         $scanner = new OLIMC_Scanner();
-        $used_ids = $scanner->collect_used_ids();
-        $total = $scanner->get_total_attachment_count();
+        $engine  = new OLIMC_Acf_Meta_Scanner($scanner);
+        $state   = $engine->initial_state();
 
-        // Store used IDs for batch processing
-        update_option('olimc_scan_used_ids', $used_ids, false);
-        // Clear old results
-        delete_option('olimc_scan_results');
+        // Until the scan finishes cleanly, nothing is unused.
+        update_option('olimc_scan_results', [], false);
+        delete_option('olimc_scan_used_ids');
+        update_option('olimc_scan_state', $state, false);
+
+        if ($state['phase'] === 'failed') {
+            wp_send_json_error(__('Scan could not start. No media was marked unused.', 'oli-media-cleaner'));
+        }
 
         wp_send_json_success([
-            'total'    => $total,
-            'used'     => count($used_ids),
-            /* translators: %1$d: number of used media, %2$d: total attachments */
-            'message'  => sprintf(__('Found %1$d used media. Scanning %2$d total attachments...', 'oli-media-cleaner'), count($used_ids), $total),
+            'total'   => $scanner->get_total_attachment_count(),
+            'percent' => 1,
+            'phase'   => $state['phase'],
+            'message' => __('Analyzing media usage…', 'oli-media-cleaner'),
         ]);
     }
 
     /**
-     * Step 2: Process a batch of attachments — check if unused.
+     * Step 2: Continue the resumable scan for a short time budget.
      */
     public static function ajax_scan_batch() {
         self::verify_request();
 
-        $offset = (int) ($_POST['offset'] ?? 0);
-        $batch_size = 50;
-
-        $scanner = new OLIMC_Scanner();
-        $used_ids = get_option('olimc_scan_used_ids', []);
-        $whitelist = get_option('olimc_whitelist', []);
-
-        global $wpdb;
-        $attachment_ids = $wpdb->get_col($wpdb->prepare(
-            "SELECT ID FROM {$wpdb->posts}
-             WHERE post_type = 'attachment'
-             AND post_status != 'trash'
-             ORDER BY ID ASC
-             LIMIT %d OFFSET %d",
-            $batch_size, $offset
-        ));
-
-        $unused_batch = [];
-        foreach ($attachment_ids as $id) {
-            $id = (int) $id;
-            if (!in_array($id, $used_ids, true) && !in_array($id, $whitelist, true)) {
-                $info = $scanner->get_attachment_info($id);
-                if ($info) {
-                    $unused_batch[] = $info;
-                }
-            }
+        $state = get_option('olimc_scan_state', []);
+        if (!is_array($state) || empty($state['phase'])) {
+            update_option('olimc_scan_results', [], false);
+            wp_send_json_error(__('Scan state was lost. No media was marked unused.', 'oli-media-cleaner'));
         }
 
-        // Append to stored results
-        $existing = get_option('olimc_scan_results', []);
-        $existing = array_merge($existing, $unused_batch);
-        update_option('olimc_scan_results', $existing, false);
+        $scanner = new OLIMC_Scanner();
+        $engine  = new OLIMC_Acf_Meta_Scanner($scanner);
+        $state   = $engine->step($state, 1500);
+        $total   = $scanner->get_total_attachment_count();
 
-        $processed = $offset + count($attachment_ids);
-        $total = $scanner->get_total_attachment_count();
-        $done = count($attachment_ids) < $batch_size;
+        if ($state['phase'] === 'failed' || !empty($state['error'])) {
+            update_option('olimc_scan_results', [], false);
+            delete_option('olimc_scan_state');
+            wp_send_json_error(__('Scan failed before it finished. No media was marked unused.', 'oli-media-cleaner'));
+        }
 
+        $done = OLIMC_Acf_Meta_Scanner::may_mark_unused($state);
         if ($done) {
+            $pending = isset($state['pending_unused']) && is_array($state['pending_unused']) ? $state['pending_unused'] : [];
+            update_option('olimc_scan_results', $pending, false);
             update_option('olimc_scan_date', current_time('mysql'), false);
-            // Cleanup temp
-            delete_option('olimc_scan_used_ids');
+            delete_option('olimc_scan_state');
+            $unused_found = count($pending);
+        } else {
+            update_option('olimc_scan_state', $state, false);
+            // Keep the public unused list empty while the scan is still running.
+            update_option('olimc_scan_results', [], false);
+            $unused_found = 0;
         }
 
         wp_send_json_success([
-            'processed'    => $processed,
+            'processed'    => (int) $state['cursor'],
             'total'        => $total,
-            'unused_found' => count($existing),
+            'unused_found' => $unused_found,
             'done'         => $done,
+            'percent'      => $done ? 100 : $engine->percent($state),
+            'phase'        => $state['phase'],
+            'message'      => $done
+                ? __('Scan complete.', 'oli-media-cleaner')
+                : __('Scanning media usage…', 'oli-media-cleaner'),
         ]);
     }
 
@@ -1317,50 +1315,42 @@ class OLIMC_Admin {
     }
 
     /**
-     * Cron callback: scan only — never trash or delete media automatically.
+     * Cron callback: resume the scan only. Never trashes or deletes media.
      */
     public static function run_scheduled_cleanup() {
+        $state = get_option('olimc_scan_state', []);
         $scanner = new OLIMC_Scanner();
-        $used_ids = $scanner->collect_used_ids();
-        $whitelist = get_option('olimc_whitelist', []);
+        $engine  = new OLIMC_Acf_Meta_Scanner($scanner);
 
-        global $wpdb;
-        $batch_size = 100;
-        $offset = 0;
-        $all_unused = [];
-
-        while (true) {
-            $attachment_ids = $wpdb->get_col($wpdb->prepare(
-                "SELECT ID FROM {$wpdb->posts}
-                 WHERE post_type = 'attachment'
-                 AND post_status != 'trash'
-                 ORDER BY ID ASC
-                 LIMIT %d OFFSET %d",
-                $batch_size, $offset
-            ));
-
-            if (empty($attachment_ids)) {
-                break;
-            }
-
-            foreach ($attachment_ids as $id) {
-                $id = (int) $id;
-                if (!in_array($id, $used_ids, true) && !in_array($id, $whitelist, true)) {
-                    $info = $scanner->get_attachment_info($id);
-                    if ($info) {
-                        $all_unused[] = $info;
-                    }
-                }
-            }
-
-            $offset += $batch_size;
-            if (count($attachment_ids) < $batch_size) {
-                break;
-            }
+        if (!is_array($state) || empty($state['phase']) || $state['phase'] === 'done' || $state['phase'] === 'failed') {
+            $state = $engine->initial_state();
+            update_option('olimc_scan_results', [], false);
         }
 
-        update_option('olimc_scan_results', $all_unused, false);
+        $deadline = microtime(true) + 20;
+        while (microtime(true) < $deadline && !in_array($state['phase'], ['done', 'failed'], true)) {
+            $state = $engine->step($state, 2000);
+            update_option('olimc_scan_state', $state, false);
+        }
+
+        $incomplete = ( $state['phase'] !== 'done' );
+        if ( $state['phase'] === 'failed' || ! empty( $state['error'] ) || ( $incomplete && ! OLIMC_Acf_Meta_Scanner::may_mark_unused( $state ) ) ) {
+            if ($state['phase'] === 'failed' || !empty($state['error'])) {
+                update_option('olimc_scan_results', [], false);
+                delete_option('olimc_scan_state');
+                return;
+            }
+            $next = wp_next_scheduled('olimc_scheduled_cleanup');
+            if (!$next || $next > time() + 120) {
+                wp_schedule_single_event(time() + 30, 'olimc_scheduled_cleanup');
+            }
+            return;
+        }
+
+        $pending = isset($state['pending_unused']) && is_array($state['pending_unused']) ? $state['pending_unused'] : [];
+        update_option('olimc_scan_results', $pending, false);
         update_option('olimc_scan_date', current_time('mysql'), false);
+        delete_option('olimc_scan_state');
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────
