@@ -95,7 +95,13 @@ class OLIMC_Admin {
         }
         $post_id = (int) $post['ID'];
         $protected = !empty($attachment['olimc_protected']);
-        update_post_meta($post_id, '_olimc_protected', $protected ? 1 : 0);
+        
+        if ($protected) {
+            update_post_meta($post_id, '_olimc_protected', 1);
+        } else {
+            delete_post_meta($post_id, '_olimc_protected');
+        }
+        
         return $post;
     }
 
@@ -188,11 +194,13 @@ class OLIMC_Admin {
     /**
      * Check if a file path matches a glob pattern or literal path.
      *
+     * Shared helper used by both Admin and Scanner classes.
+     *
      * @param string $file    Uploads-relative file path.
      * @param string $pattern Pattern (may contain * wildcards).
      * @return bool
      */
-    private static function path_matches_pattern($file, $pattern) {
+    public static function path_matches_pattern($file, $pattern) {
         $file = ltrim($file, '/');
         $pattern = ltrim($pattern, '/');
 
@@ -201,9 +209,10 @@ class OLIMC_Admin {
             return true;
         }
 
-        // Glob match (convert glob to regex)
+        // Glob match (convert glob to regex, handling * correctly)
         if (strpos($pattern, '*') !== false) {
-            $regex = '#^' . str_replace(['*', '/'], ['.*', '\\/'], preg_quote($pattern, '#')) . '$#i';
+            // Quote everything except *, then replace \* with the wildcard regex
+            $regex = '#^' . str_replace('\\*', '[^/]*', preg_quote($pattern, '#')) . '$#i';
             return (bool) preg_match($regex, $file);
         }
 
@@ -1567,12 +1576,14 @@ https://example.com/wp-content/uploads/2024/03/logo.png', 'oli-media-cleaner'); 
         $total = count($scan_results);
         $batch = array_slice($scan_results, 0, $batch_size);
         $trashed = 0;
+        $protected = 0;
 
         foreach ($batch as $item) {
             $id = (int)$item['id'];
             if (self::is_attachment_protected($id)) {
                 // Skip protected, but still remove from results so we don't try again
                 self::remove_from_scan_results($id);
+                $protected++;
                 continue;
             }
             if (wp_trash_post($id)) {
@@ -1581,13 +1592,21 @@ https://example.com/wp-content/uploads/2024/03/logo.png', 'oli-media-cleaner'); 
             }
         }
 
-        $remaining = $total - $trashed;
+        // Remaining count excludes protected items we just removed
+        $remaining = $total - $trashed - $protected;
+
+        $message = '';
+        if ($protected > 0) {
+            /* translators: %d: number of files */
+            $message = sprintf(_n('%d protected file skipped.', '%d protected files skipped.', $protected, 'oli-media-cleaner'), $protected);
+        }
 
         wp_send_json_success([
             'trashed'   => $trashed,
             'remaining' => max(0, $remaining),
             'total'     => $total,
             'done'      => $remaining <= 0,
+            'message'   => $message,
         ]);
     }
 
@@ -1612,11 +1631,13 @@ https://example.com/wp-content/uploads/2024/03/logo.png', 'oli-media-cleaner'); 
 
         $total_trashed = (int) wp_count_posts('attachment')->trash;
         $deleted = 0;
+        $protected_skipped = 0;
 
         foreach ($trashed_ids as $id) {
             $id = (int) $id;
             if (self::is_attachment_protected($id)) {
                 // Skip protected files - they shouldn't be in trash, but if they are, keep them
+                $protected_skipped++;
                 continue;
             }
             if (self::delete_attachment_preserve_shared_files($id)) {
@@ -1624,13 +1645,21 @@ https://example.com/wp-content/uploads/2024/03/logo.png', 'oli-media-cleaner'); 
             }
         }
 
-        $remaining = max(0, $total_trashed - $deleted);
+        // Remaining excludes protected items that were skipped
+        $remaining = max(0, $total_trashed - $deleted - $protected_skipped);
+
+        $message = '';
+        if ($protected_skipped > 0) {
+            /* translators: %d: number of files */
+            $message = sprintf(_n('%d protected file skipped.', '%d protected files skipped.', $protected_skipped, 'oli-media-cleaner'), $protected_skipped);
+        }
 
         wp_send_json_success([
             'deleted'   => $deleted,
             'remaining' => $remaining,
             'total'     => $total_trashed,
             'done'      => $remaining <= 0,
+            'message'   => $message,
         ]);
     }
 

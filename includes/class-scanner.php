@@ -150,7 +150,7 @@ class OLIMC_Scanner {
         foreach ($files as $row) {
             $file = $row->meta_value;
             foreach ($patterns as $pattern) {
-                if ($this->path_matches_pattern($file, $pattern)) {
+                if (OLIMC_Admin::path_matches_pattern($file, $pattern)) {
                     $protected[] = (int) $row->post_id;
                     break;
                 }
@@ -187,31 +187,6 @@ class OLIMC_Scanner {
 
         // Remove leading slash for consistency
         return ltrim($pattern, '/');
-    }
-
-    /**
-     * Check if a file path matches a glob pattern or literal path.
-     *
-     * @param string $file    Uploads-relative file path.
-     * @param string $pattern Pattern (may contain * wildcards).
-     * @return bool
-     */
-    private function path_matches_pattern($file, $pattern) {
-        $file = ltrim($file, '/');
-        $pattern = ltrim($pattern, '/');
-
-        // Literal match
-        if ($file === $pattern) {
-            return true;
-        }
-
-        // Glob match (convert glob to regex)
-        if (strpos($pattern, '*') !== false) {
-            $regex = '#^' . str_replace(['*', '/'], ['.*', '\\/'], preg_quote($pattern, '#')) . '$#i';
-            return (bool) preg_match($regex, $file);
-        }
-
-        return false;
     }
 
     /**
