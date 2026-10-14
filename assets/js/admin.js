@@ -217,6 +217,11 @@
                 self.saveCronSettings();
             });
 
+            // Protection settings
+            $('#olimc-save-protection-btn').on('click', function() {
+                self.saveProtectionSettings();
+            });
+
             // Sort by column header
             $(document).on('click', '.olimc-sortable', function() {
                 var col = $(this).data('sort');
@@ -942,6 +947,23 @@
                 if (res.success) {
                     self.toast(res.data.message, 'success');
                     $('#olimc-next-run').text(res.data.next_run);
+                } else {
+                    self.toast(res.data || self.str('error_saving'), 'error');
+                }
+            });
+        },
+
+        saveProtectionSettings: function() {
+            var self = this;
+            var protectedPaths = $('#olimc-protected-paths').val();
+
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_save_protection_settings',
+                nonce: olimcObj.nonce,
+                protected_paths: protectedPaths
+            }, function(res) {
+                if (res.success) {
+                    self.toast(res.data.message, 'success');
                 } else {
                     self.toast(res.data || self.str('error_saving'), 'error');
                 }

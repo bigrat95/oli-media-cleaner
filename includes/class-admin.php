@@ -12,6 +12,10 @@ class OLIMC_Admin {
         add_action('admin_notices', [__CLASS__, 'donate_notice']);
         add_action('wp_ajax_olimc_dismiss_donate', [__CLASS__, 'ajax_dismiss_donate']);
 
+        // Protection hooks
+        add_filter('attachment_fields_to_edit', [__CLASS__, 'add_protection_checkbox'], 10, 2);
+        add_filter('attachment_fields_to_save', [__CLASS__, 'save_protection_checkbox'], 10, 2);
+
         // AJAX handlers
         add_action('wp_ajax_olimc_start_scan', [__CLASS__, 'ajax_start_scan']);
         add_action('wp_ajax_olimc_scan_batch', [__CLASS__, 'ajax_scan_batch']);
@@ -31,6 +35,7 @@ class OLIMC_Admin {
         add_action('wp_ajax_olimc_restore_bulk', [__CLASS__, 'ajax_restore_bulk']);
         add_action('wp_ajax_olimc_restore_all_batch', [__CLASS__, 'ajax_restore_all_batch']);
         add_action('wp_ajax_olimc_save_cron_settings', [__CLASS__, 'ajax_save_cron_settings']);
+        add_action('wp_ajax_olimc_save_protection_settings', [__CLASS__, 'ajax_save_protection_settings']);
         add_action('wp_ajax_olimc_empty_trash_batch', [__CLASS__, 'ajax_empty_trash_batch']);
 
         // Cron hook
@@ -54,11 +59,168 @@ class OLIMC_Admin {
         );
     }
 
+    // ─── Protection system ────────────────────────────────────────────
+
+    /**
+     * Add 'Protéger' checkbox to attachment edit screen.
+     *
+     * @param array   $form_fields Fields to display.
+     * @param WP_Post $post        Attachment post.
+     * @return array
+     */
+    public static function add_protection_checkbox($form_fields, $post) {
+        if ($post->post_type !== 'attachment') {
+            return $form_fields;
+        }
+        $protected = (bool) get_post_meta($post->ID, '_olimc_protected', true);
+        $form_fields['olimc_protected'] = [
+            'label' => __('Protect from deletion', 'oli-media-cleaner'),
+            'input' => 'html',
+            'html'  => '<label><input type="checkbox" name="attachments[' . (int) $post->ID . '][olimc_protected]" value="1" ' . checked($protected, true, false) . '> ' . esc_html__('Protect this file from being listed as unused or deleted by Media Cleaner', 'oli-media-cleaner') . '</label>',
+            'helps' => __('When checked, Media Cleaner will never flag this file as unused and will refuse any deletion attempts.', 'oli-media-cleaner'),
+        ];
+        return $form_fields;
+    }
+
+    /**
+     * Save the protection checkbox value.
+     *
+     * @param array $post       Attachment post data.
+     * @param array $attachment Attachment fields.
+     * @return array
+     */
+    public static function save_protection_checkbox($post, $attachment) {
+        if (!isset($post['ID']) || !current_user_can('edit_post', $post['ID'])) {
+            return $post;
+        }
+        $post_id = (int) $post['ID'];
+        $protected = !empty($attachment['olimc_protected']);
+        update_post_meta($post_id, '_olimc_protected', $protected ? 1 : 0);
+        return $post;
+    }
+
+    /**
+     * Check if an attachment is protected via meta or path matching.
+     *
+     * @param int $attachment_id Attachment ID.
+     * @return bool
+     */
+    public static function is_attachment_protected($attachment_id) {
+        $attachment_id = (int) $attachment_id;
+        if ($attachment_id <= 0) {
+            return false;
+        }
+
+        // Check per-attachment meta flag
+        if (get_post_meta($attachment_id, '_olimc_protected', true)) {
+            return true;
+        }
+
+        // Check global protected paths
+        $protected_paths = get_option('olimc_protected_paths', '');
+        if (empty($protected_paths) || !is_string($protected_paths)) {
+            return false;
+        }
+
+        $file = get_post_meta($attachment_id, '_wp_attached_file', true);
+        if (empty($file)) {
+            return false;
+        }
+
+        $url = wp_get_attachment_url($attachment_id);
+        if (!$url) {
+            return false;
+        }
+
+        $upload_dir = wp_upload_dir(null, false);
+        $base_url = isset($upload_dir['baseurl']) ? $upload_dir['baseurl'] : '';
+
+        $lines = array_filter(array_map('trim', explode("\n", $protected_paths)));
+        foreach ($lines as $pattern) {
+            if (empty($pattern)) {
+                continue;
+            }
+
+            // Normalize to uploads-relative path
+            $pattern = self::normalize_protected_pattern($pattern, $base_url);
+            if (empty($pattern)) {
+                continue;
+            }
+
+            // Check if file matches pattern (glob or literal)
+            if (self::path_matches_pattern($file, $pattern)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Normalize a protected pattern to uploads-relative path.
+     *
+     * @param string $pattern  Raw pattern (path, URL, or glob).
+     * @param string $base_url Upload base URL.
+     * @return string Normalized pattern.
+     */
+    private static function normalize_protected_pattern($pattern, $base_url) {
+        $pattern = trim($pattern);
+        if (empty($pattern)) {
+            return '';
+        }
+
+        // Convert URL to path
+        if (preg_match('#^https?://#i', $pattern)) {
+            if (!empty($base_url) && strpos($pattern, $base_url) === 0) {
+                $pattern = substr($pattern, strlen($base_url));
+            } else {
+                // Try to extract path from URL
+                if (preg_match('#/wp-content/uploads/(.+)$#', $pattern, $m)) {
+                    $pattern = $m[1];
+                }
+            }
+        }
+
+        // Remove leading slash for consistency
+        return ltrim($pattern, '/');
+    }
+
+    /**
+     * Check if a file path matches a glob pattern or literal path.
+     *
+     * @param string $file    Uploads-relative file path.
+     * @param string $pattern Pattern (may contain * wildcards).
+     * @return bool
+     */
+    private static function path_matches_pattern($file, $pattern) {
+        $file = ltrim($file, '/');
+        $pattern = ltrim($pattern, '/');
+
+        // Literal match
+        if ($file === $pattern) {
+            return true;
+        }
+
+        // Glob match (convert glob to regex)
+        if (strpos($pattern, '*') !== false) {
+            $regex = '#^' . str_replace(['*', '/'], ['.*', '\\/'], preg_quote($pattern, '#')) . '$#i';
+            return (bool) preg_match($regex, $file);
+        }
+
+        return false;
+    }
+
+    // ─── End protection system ────────────────────────────────────────
+
     public static function activate() {
         update_option('olimc_version', OLIMC_VERSION);
         // Initialize whitelist as empty
         if (false === get_option('olimc_whitelist')) {
             update_option('olimc_whitelist', [], false);
+        }
+        // Initialize protected paths as empty
+        if (false === get_option('olimc_protected_paths')) {
+            update_option('olimc_protected_paths', '', false);
         }
     }
 
@@ -365,6 +527,45 @@ class OLIMC_Admin {
                 </div>
                 <div class="alignright" id="olimc-pagination"></div>
                 <br class="clear">
+            </div>
+
+            <div class="postbox" style="margin-top:30px;">
+                <div class="postbox-header"><h2 style="padding:8px 12px;margin:0;"><?php esc_html_e('Protection Settings', 'oli-media-cleaner'); ?></h2></div>
+                <div class="inside">
+                    <p class="description">
+                        <?php esc_html_e('Protect specific files from being listed as unused or deleted. Enter one path, URL, or glob pattern per line.', 'oli-media-cleaner'); ?>
+                    </p>
+                    <table class="form-table">
+                        <tr>
+                            <th><?php esc_html_e('Protected Paths', 'oli-media-cleaner'); ?></th>
+                            <td>
+                                <textarea
+                                    id="olimc-protected-paths"
+                                    rows="8"
+                                    style="width:100%;max-width:600px;font-family:monospace;"
+                                    placeholder="<?php esc_attr_e('Examples:
+2024/03/logo_osm_2019.png
+2023/*/header-*.jpg
+https://example.com/wp-content/uploads/2024/03/logo.png', 'oli-media-cleaner'); ?>"
+                                ><?php echo esc_textarea(get_option('olimc_protected_paths', '')); ?></textarea>
+                                <p class="description">
+                                    <?php esc_html_e('Use * wildcards for glob patterns. Paths are relative to the uploads directory. Derivatives (thumbnails, WebP) are automatically protected when the original is protected.', 'oli-media-cleaner'); ?>
+                                </p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><?php esc_html_e('Per-File Protection', 'oli-media-cleaner'); ?></th>
+                            <td>
+                                <p class="description">
+                                    <?php esc_html_e('Individual files can also be protected using the "Protect from deletion" checkbox in the attachment edit screen or media modal.', 'oli-media-cleaner'); ?>
+                                </p>
+                            </td>
+                        </tr>
+                    </table>
+                    <p>
+                        <button type="button" id="olimc-save-protection-btn" class="button button-primary"><?php esc_html_e('Save Protection Settings', 'oli-media-cleaner'); ?></button>
+                    </p>
+                </div>
             </div>
 
             <div class="postbox" style="margin-top:30px;">
@@ -974,6 +1175,10 @@ class OLIMC_Admin {
         $post_id = (int) ($_POST['post_id'] ?? 0);
         if (!$post_id) wp_send_json_error(__('Invalid ID.', 'oli-media-cleaner'));
 
+        if (self::is_attachment_protected($post_id)) {
+            wp_send_json_error(__('This file is protected and cannot be trashed.', 'oli-media-cleaner'));
+        }
+
         $result = wp_trash_post($post_id);
         if ($result) {
             self::remove_from_scan_results($post_id);
@@ -990,23 +1195,37 @@ class OLIMC_Admin {
 
         $ids = array_map('intval', $_POST['ids'] ?? []);
         $trashed = 0;
+        $protected = 0;
         foreach ($ids as $id) {
+            if (self::is_attachment_protected($id)) {
+                $protected++;
+                continue;
+            }
             if (wp_trash_post($id)) {
                 self::remove_from_scan_results($id);
                 $trashed++;
             }
         }
 
-        wp_send_json_success([
-            /* translators: %d: number of files trashed */
+        $message = '';
+        if ($trashed > 0) {
             /* translators: %d: number of files */
-            'message' => sprintf(_n('%d file moved to trash.', '%d files moved to trash.', $trashed, 'oli-media-cleaner'), $trashed),
+            $message = sprintf(_n('%d file moved to trash.', '%d files moved to trash.', $trashed, 'oli-media-cleaner'), $trashed);
+        }
+        if ($protected > 0) {
+            /* translators: %d: number of files */
+            $msg = sprintf(_n('%d protected file skipped.', '%d protected files skipped.', $protected, 'oli-media-cleaner'), $protected);
+            $message = $message ? $message . ' ' . $msg : $msg;
+        }
+
+        wp_send_json_success([
+            'message' => $message ?: __('No files were trashed.', 'oli-media-cleaner'),
             'count'   => $trashed,
         ]);
     }
 
     /**
-     * Shared files, or an unknown index, must not be deleted or trashed.
+     * Shared files, or an unknown index, or protected files must not be deleted or trashed.
      *
      * @param int $post_id Attachment ID.
      * @return bool
@@ -1016,6 +1235,12 @@ class OLIMC_Admin {
         if ($post_id <= 0) {
             return false;
         }
+
+        // Check protection first (cheapest check)
+        if (self::is_attachment_protected($post_id)) {
+            return true;
+        }
+
         $shared = (new OLIMC_Scanner())->shared_relative_upload_paths($post_id);
         return $shared === null || $shared !== [];
     }
@@ -1140,6 +1365,10 @@ class OLIMC_Admin {
         $post_id = (int) ($_POST['post_id'] ?? 0);
         if (!$post_id) wp_send_json_error(__('Invalid ID.', 'oli-media-cleaner'));
 
+        if (self::is_attachment_protected($post_id)) {
+            wp_send_json_error(__('This file is protected and cannot be deleted.', 'oli-media-cleaner'));
+        }
+
         $result = self::delete_attachment_preserve_shared_files($post_id);
         if ($result) {
             self::remove_from_scan_results($post_id);
@@ -1156,17 +1385,31 @@ class OLIMC_Admin {
 
         $ids = array_map('intval', $_POST['ids'] ?? []);
         $deleted = 0;
+        $protected = 0;
         foreach ($ids as $id) {
+            if (self::is_attachment_protected($id)) {
+                $protected++;
+                continue;
+            }
             if (self::delete_attachment_preserve_shared_files($id)) {
                 self::remove_from_scan_results($id);
                 $deleted++;
             }
         }
 
-        wp_send_json_success([
-            /* translators: %d: number of files deleted */
+        $message = '';
+        if ($deleted > 0) {
             /* translators: %d: number of files */
-            'message' => sprintf(_n('%d file permanently deleted.', '%d files permanently deleted.', $deleted, 'oli-media-cleaner'), $deleted),
+            $message = sprintf(_n('%d file permanently deleted.', '%d files permanently deleted.', $deleted, 'oli-media-cleaner'), $deleted);
+        }
+        if ($protected > 0) {
+            /* translators: %d: number of files */
+            $msg = sprintf(_n('%d protected file skipped.', '%d protected files skipped.', $protected, 'oli-media-cleaner'), $protected);
+            $message = $message ? $message . ' ' . $msg : $msg;
+        }
+
+        wp_send_json_success([
+            'message' => $message ?: __('No files were deleted.', 'oli-media-cleaner'),
             'count'   => $deleted,
         ]);
     }
@@ -1326,8 +1569,14 @@ class OLIMC_Admin {
         $trashed = 0;
 
         foreach ($batch as $item) {
-            if (wp_trash_post((int)$item['id'])) {
-                self::remove_from_scan_results((int)$item['id']);
+            $id = (int)$item['id'];
+            if (self::is_attachment_protected($id)) {
+                // Skip protected, but still remove from results so we don't try again
+                self::remove_from_scan_results($id);
+                continue;
+            }
+            if (wp_trash_post($id)) {
+                self::remove_from_scan_results($id);
                 $trashed++;
             }
         }
@@ -1365,7 +1614,12 @@ class OLIMC_Admin {
         $deleted = 0;
 
         foreach ($trashed_ids as $id) {
-            if (self::delete_attachment_preserve_shared_files((int) $id)) {
+            $id = (int) $id;
+            if (self::is_attachment_protected($id)) {
+                // Skip protected files - they shouldn't be in trash, but if they are, keep them
+                continue;
+            }
+            if (self::delete_attachment_preserve_shared_files($id)) {
                 $deleted++;
             }
         }
@@ -1459,6 +1713,20 @@ class OLIMC_Admin {
                 ? sprintf(__('Scheduled scan enabled (%1$s). Next run: %2$s', 'oli-media-cleaner'), $frequency_label, $next_run)
                 : __('Scheduled scan disabled.', 'oli-media-cleaner'),
             'next_run' => $next_run ?: __('Not scheduled', 'oli-media-cleaner'),
+        ]);
+    }
+
+    /**
+     * Save protection settings.
+     */
+    public static function ajax_save_protection_settings() {
+        self::verify_request();
+
+        $protected_paths = isset($_POST['protected_paths']) ? sanitize_textarea_field(wp_unslash($_POST['protected_paths'])) : '';
+        update_option('olimc_protected_paths', $protected_paths, false);
+
+        wp_send_json_success([
+            'message' => __('Protection settings saved.', 'oli-media-cleaner'),
         ]);
     }
 

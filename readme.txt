@@ -5,7 +5,7 @@ Tags: media, cleanup, unused images, media cleaner, disk space
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.5.20
+Stable tag: 1.5.21
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -104,6 +104,13 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 4. Scan sources information panel
 
 == Changelog ==
+
+= 1.5.21 =
+* NEW: Protection system for externally referenced files — prevent deletion of files still in use outside WordPress (e.g. receipts, external systems)
+* NEW: Global protected paths setting — protect files by path, URL, or glob pattern (one per line in settings)
+* NEW: Per-attachment protection checkbox — "Protect from deletion" in the attachment edit screen and media modal
+* FIX: Protected files are never listed as unused by the scan and all deletion attempts (AJAX, bulk, cron, background) are refused server-side with clear admin messages
+* CHANGE: Thumbnails and derivative files (.webp, .avif) are automatically protected when their original is protected
 
 = 1.5.20 =
 * FIX: A file that another attachment still references is kept on every deletion path. Trash, the 30-day empty, and the Media Library go through the same guard. Imagify is not allowed to delete the WebP, AVIF, or backup of a shared file
@@ -239,6 +246,9 @@ No. The plugin uses WordPress options only. Clean and lightweight.
 * Native WordPress admin UI — no external dependencies
 
 == Upgrade Notice ==
+
+= 1.5.21 =
+Protection system for files referenced outside WordPress. Add paths/URLs/globs to settings or use per-file checkboxes to prevent deletion.
 
 = 1.5.20 =
 Shared files stay on disk even if an attachment is trashed or deleted outside this plugin, including by Imagify. A previous scan result is no longer treated as proof that a file is in use.

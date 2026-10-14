@@ -156,6 +156,14 @@ class OLIMC_Acf_Meta_Scanner {
 		global $wpdb;
 
 		$this->scanner->ensure_attachment_lookup();
+
+		// Mark protected attachments as used immediately
+		$protected = $this->scanner->get_protected_attachment_ids();
+		$initial_used = [];
+		foreach ($protected as $id) {
+			$initial_used[(int) $id] = 1;
+		}
+
 		$targets = $this->scanner->get_acf_media_field_targets();
 		$mode    = is_array( $targets ) ? 'acf' : 'fallback';
 
@@ -174,7 +182,7 @@ class OLIMC_Acf_Meta_Scanner {
 			'discovered_term'   => [],
 			'discovered_user'   => [],
 			'discovered_option' => [],
-			'used'              => [],
+			'used'              => $initial_used,
 			'pending_unused'    => [],
 			'pending_delta'     => [],
 			'max_post'          => $max_post,
