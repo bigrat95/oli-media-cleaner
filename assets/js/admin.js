@@ -981,18 +981,31 @@
                     
                     // Display warnings about pattern match counts
                     if (res.data.warnings && res.data.warnings.length > 0) {
-                        var warningHtml = '<div style="margin-top:10px;"><strong>Pattern Match Counts:</strong><ul style="margin:5px 0;">';
+                        var warningHtml = '<div style="margin-top:10px;"><strong>' + self.str('pattern_match_counts') + '</strong><ul style="margin:5px 0;">';
                         res.data.warnings.forEach(function(w) {
                             var style = '';
                             var icon = '';
-                            if (w.level === 'very-broad') {
-                                style = ' style="color:#d63638;font-weight:bold;"';
+                            var countText = '';
+                            
+                            if (w.count === 0) {
+                                // Zero matches - possible typo
+                                style = ' style="color:#d63638;"';
                                 icon = '⚠️ ';
-                            } else if (w.level === 'broad') {
-                                style = ' style="color:#dba617;"';
-                                icon = '⚠ ';
+                                countText = self.str('pattern_no_matches');
+                            } else {
+                                // Format count with plural
+                                countText = w.count + ' ' + (w.count === 1 ? self.str('pattern_matches_file') : self.str('pattern_matches_files'));
+                                
+                                if (w.level === 'very-broad') {
+                                    style = ' style="color:#d63638;font-weight:bold;"';
+                                    icon = '⚠️ ';
+                                } else if (w.level === 'broad') {
+                                    style = ' style="color:#dba617;"';
+                                    icon = '⚠ ';
+                                }
                             }
-                            warningHtml += '<li' + style + '>' + icon + self.escapeText(w.pattern) + ': ' + w.count + ' file(s)</li>';
+                            
+                            warningHtml += '<li' + style + '>' + icon + self.escapeText(w.pattern) + ': ' + countText + '</li>';
                         });
                         warningHtml += '</ul></div>';
                         

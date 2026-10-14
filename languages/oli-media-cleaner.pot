@@ -431,3 +431,17 @@ msgstr ""
 
 msgid "Use * wildcards for glob patterns: * matches within one directory segment, ** matches across segments. Paths are relative to the uploads directory. Derivatives (thumbnails, WebP) are automatically protected when the original is protected."
 msgstr ""
+
+msgid "Pattern Match Counts:"
+msgstr ""
+
+#. translators: %d: number of files
+msgid "%d file"
+msgstr ""
+
+#. translators: %d: number of files
+msgid "%d files"
+msgstr ""
+
+msgid "No matches (possible typo?)"
+msgstr ""

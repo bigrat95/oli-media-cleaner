@@ -439,6 +439,12 @@ class OLIMC_Admin {
                 'items_count'            => __('%d items', 'oli-media-cleaner'),
                 'trash_all_unused'       => __('Trash All Unused', 'oli-media-cleaner'),
                 'empty_trash'            => __('Empty Trash', 'oli-media-cleaner'),
+                'pattern_match_counts'   => __('Pattern Match Counts:', 'oli-media-cleaner'),
+                /* translators: %d: number of files */
+                'pattern_matches_file'   => __('%d file', 'oli-media-cleaner'),
+                /* translators: %d: number of files */
+                'pattern_matches_files'  => __('%d files', 'oli-media-cleaner'),
+                'pattern_no_matches'     => __('No matches (possible typo?)', 'oli-media-cleaner'),
             ],
         ]);
     }
@@ -1640,20 +1646,25 @@ https://example.com/wp-content/uploads/2024/03/logo.png', 'oli-media-cleaner'); 
         $batch_size = 50;
         $last_id = isset($_POST['last_id']) ? (int) $_POST['last_id'] : 0;
 
-        // Get protected IDs (meta-based protection)
+        // Get protected IDs (meta-based protection) - ONLY from trash
         $protected_meta_ids = $wpdb->get_col(
-            "SELECT DISTINCT post_id FROM {$wpdb->postmeta}
-             WHERE meta_key = '_olimc_protected' AND meta_value = '1'"
+            "SELECT DISTINCT pm.post_id
+             FROM {$wpdb->postmeta} pm
+             INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+             WHERE pm.meta_key = '_olimc_protected'
+             AND pm.meta_value = '1'
+             AND p.post_type = 'attachment'
+             AND p.post_status = 'trash'"
         );
 
-        // Get protected IDs (path-based protection)
+        // Get protected IDs (path-based protection) - ONLY from trash
         $protected_path_ids = [];
         $protected_paths = get_option('olimc_protected_paths', '');
         if (!empty($protected_paths) && is_string($protected_paths)) {
             $upload_dir = wp_upload_dir(null, false);
             $base_url = isset($upload_dir['baseurl']) ? $upload_dir['baseurl'] : '';
             
-            // Get all trashed attachment files
+            // Get all trashed attachment files (already filtered to trash status)
             $trashed_files = $wpdb->get_results(
                 "SELECT p.ID as post_id, pm.meta_value as file_path
                  FROM {$wpdb->posts} p
@@ -1707,7 +1718,7 @@ https://example.com/wp-content/uploads/2024/03/logo.png', 'oli-media-cleaner'); 
             $batch_size
         ) );
 
-        // Count only deletable items (excluding all protected)
+        // Count only deletable items (excluding all protected) - from trash only
         $total_trashed = (int) wp_count_posts('attachment')->trash;
         $protected_count = count($all_protected_ids);
         $deletable_count = $total_trashed - $protected_count;
@@ -1869,20 +1880,21 @@ https://example.com/wp-content/uploads/2024/03/logo.png', 'oli-media-cleaner'); 
                     }
                 }
 
-                if ($match_count > 0) {
-                    $warning_level = '';
-                    if ($match_count > 100) {
-                        $warning_level = 'very-broad';
-                    } elseif ($match_count > 20) {
-                        $warning_level = 'broad';
-                    }
-
-                    $warnings[] = [
-                        'pattern' => $pattern,
-                        'count' => $match_count,
-                        'level' => $warning_level,
-                    ];
+                // Always include patterns, even with 0 matches (possible typo)
+                $warning_level = '';
+                if ($match_count === 0) {
+                    $warning_level = 'no-match';
+                } elseif ($match_count > 100) {
+                    $warning_level = 'very-broad';
+                } elseif ($match_count > 20) {
+                    $warning_level = 'broad';
                 }
+
+                $warnings[] = [
+                    'pattern' => $pattern,
+                    'count' => $match_count,
+                    'level' => $warning_level,
+                ];
             }
         }
 
