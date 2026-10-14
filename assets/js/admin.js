@@ -993,8 +993,9 @@
                                 icon = '⚠️ ';
                                 countText = self.str('pattern_no_matches');
                             } else {
-                                // Format count with plural
-                                countText = w.count + ' ' + (w.count === 1 ? self.str('pattern_matches_file') : self.str('pattern_matches_files'));
+                                // Format count using the translated string with %d placeholder
+                                var template = w.count === 1 ? self.str('pattern_matches_file') : self.str('pattern_matches_files');
+                                countText = self.format(template, w.count);
                                 
                                 if (w.level === 'very-broad') {
                                     style = ' style="color:#d63638;font-weight:bold;"';
