@@ -204,15 +204,15 @@ class OLIMC_Admin {
         $file = ltrim($file, '/');
         $pattern = ltrim($pattern, '/');
 
-        // Literal match
-        if ($file === $pattern) {
+        // Literal match (case-insensitive for file systems)
+        if (strcasecmp($file, $pattern) === 0) {
             return true;
         }
 
-        // Glob match (convert glob to regex, handling * correctly)
+        // Glob match: * matches any characters including /
         if (strpos($pattern, '*') !== false) {
-            // Quote everything except *, then replace \* with the wildcard regex
-            $regex = '#^' . str_replace('\\*', '[^/]*', preg_quote($pattern, '#')) . '$#i';
+            // Quote everything except *, then replace \* with .*
+            $regex = '#^' . str_replace('\\*', '.*', preg_quote($pattern, '#')) . '$#i';
             return (bool) preg_match($regex, $file);
         }
 
@@ -1619,46 +1619,71 @@ https://example.com/wp-content/uploads/2024/03/logo.png', 'oli-media-cleaner'); 
         global $wpdb;
         $batch_size = 50;
 
-        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+        // Get protected IDs to exclude from the query
+        $protected_meta_ids = $wpdb->get_col(
+            "SELECT DISTINCT post_id FROM {$wpdb->postmeta}
+             WHERE meta_key = '_olimc_protected' AND meta_value = '1'"
+        );
+
+        // Build exclusion clause
+        $exclude_clause = '';
+        if (!empty($protected_meta_ids)) {
+            $protected_ids_str = implode(',', array_map('intval', $protected_meta_ids));
+            $exclude_clause = " AND ID NOT IN ({$protected_ids_str})";
+        }
+
+        // Also need to check protected paths - this is expensive, so we'll check after fetching
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         $trashed_ids = $wpdb->get_col( $wpdb->prepare(
             "SELECT ID FROM {$wpdb->posts}
              WHERE post_type = 'attachment'
              AND post_status = 'trash'
+             {$exclude_clause}
              ORDER BY ID ASC
              LIMIT %d",
             $batch_size
         ) );
 
+        // Filter out any items protected by path patterns
+        $filtered_ids = [];
+        foreach ($trashed_ids as $id) {
+            if (!self::is_attachment_protected((int) $id)) {
+                $filtered_ids[] = (int) $id;
+            }
+        }
+
         $total_trashed = (int) wp_count_posts('attachment')->trash;
         $deleted = 0;
-        $protected_skipped = 0;
 
-        foreach ($trashed_ids as $id) {
-            $id = (int) $id;
-            if (self::is_attachment_protected($id)) {
-                // Skip protected files - they shouldn't be in trash, but if they are, keep them
-                $protected_skipped++;
-                continue;
-            }
+        foreach ($filtered_ids as $id) {
             if (self::delete_attachment_preserve_shared_files($id)) {
                 $deleted++;
             }
         }
 
-        // Remaining excludes protected items that were skipped
-        $remaining = max(0, $total_trashed - $deleted - $protected_skipped);
+        // Remaining excludes protected items
+        $remaining = max(0, $total_trashed - $deleted);
 
+        // If we got IDs but deleted none, we're stuck on protected items - report done to avoid infinite loop
+        $stuck_on_protected = !empty($trashed_ids) && $deleted === 0 && $remaining > 0;
+        
         $message = '';
-        if ($protected_skipped > 0) {
-            /* translators: %d: number of files */
-            $message = sprintf(_n('%d protected file skipped.', '%d protected files skipped.', $protected_skipped, 'oli-media-cleaner'), $protected_skipped);
+        if ($stuck_on_protected || ($remaining === 0 && count($filtered_ids) < count($trashed_ids))) {
+            $protected_count = count($trashed_ids) - count($filtered_ids);
+            if ($stuck_on_protected) {
+                // We hit a batch full of protected items
+                $message = sprintf(_n('%d protected file in trash cannot be deleted.', '%d protected files in trash cannot be deleted.', $remaining, 'oli-media-cleaner'), $remaining);
+            } elseif ($protected_count > 0) {
+                /* translators: %d: number of files */
+                $message = sprintf(_n('%d protected file skipped.', '%d protected files skipped.', $protected_count, 'oli-media-cleaner'), $protected_count);
+            }
         }
 
         wp_send_json_success([
             'deleted'   => $deleted,
             'remaining' => $remaining,
             'total'     => $total_trashed,
-            'done'      => $remaining <= 0,
+            'done'      => $remaining <= 0 || $stuck_on_protected,
             'message'   => $message,
         ]);
     }

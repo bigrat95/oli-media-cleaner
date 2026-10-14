@@ -761,10 +761,12 @@
             self.trashAllBatch(totalStart);
         },
 
-        trashAllBatch: function(totalStart) {
+        trashAllBatch: function(totalStart, cumulativeTrashed) {
             var self = this;
             var $fill = $('#olimc-progress-fill');
             var $text = $('#olimc-progress-text');
+            
+            if (typeof cumulativeTrashed === 'undefined') cumulativeTrashed = 0;
 
             $.post(olimcObj.ajaxurl, {
                 action: 'olimc_trash_all_batch',
@@ -777,18 +779,22 @@
                 }
 
                 if (totalStart === 0) totalStart = res.data.total || 1;
-                var trashed = totalStart - res.data.remaining;
-                var pct = Math.min(100, Math.round((trashed / totalStart) * 100));
+                cumulativeTrashed += (res.data.trashed || 0);
+                var pct = Math.min(100, Math.round((cumulativeTrashed / totalStart) * 100));
                 $fill.css('width', pct + '%');
-                $text.text(self.format(self.str('trashed_progress'), pct, trashed, totalStart));
+                $text.text(self.format(self.str('trashed_progress'), pct, cumulativeTrashed, totalStart));
 
                 // Update tab counts live
                 $('#olimc-unused-count').text('(' + res.data.remaining + ')');
 
                 if (res.data.done) {
                     $fill.css('width', '100%');
-                    $text.text(self.format(self.str('done_trashed'), totalStart));
-                    self.toast(self.format(self.str('done_trashed'), totalStart), 'success');
+                    var message = self.format(self.str('done_trashed'), cumulativeTrashed);
+                    if (res.data.message) {
+                        message += ' ' + res.data.message;
+                    }
+                    $text.text(message);
+                    self.toast(message, 'success');
                     self.currentPage = 1;
                     self.loadResults();
                     setTimeout(function() {
@@ -796,7 +802,7 @@
                         self.resetTrashAllUI();
                     }, 3000);
                 } else {
-                    self.trashAllBatch(totalStart);
+                    self.trashAllBatch(totalStart, cumulativeTrashed);
                 }
             }).fail(function() {
                 self.toast(self.str('network_error'), 'error');
@@ -886,10 +892,12 @@
             self.emptyTrashBatch(totalStart);
         },
 
-        emptyTrashBatch: function(totalStart) {
+        emptyTrashBatch: function(totalStart, cumulativeDeleted) {
             var self = this;
             var $fill = $('#olimc-progress-fill');
             var $text = $('#olimc-progress-text');
+            
+            if (typeof cumulativeDeleted === 'undefined') cumulativeDeleted = 0;
 
             $.post(olimcObj.ajaxurl, {
                 action: 'olimc_empty_trash_batch',
@@ -902,18 +910,22 @@
                 }
 
                 if (totalStart === 0) totalStart = res.data.total || 1;
-                var deleted = totalStart - res.data.remaining;
-                var pct = Math.min(100, Math.round((deleted / totalStart) * 100));
+                cumulativeDeleted += (res.data.deleted || 0);
+                var pct = Math.min(100, Math.round((cumulativeDeleted / totalStart) * 100));
                 $fill.css('width', pct + '%');
-                $text.text(self.format(self.str('deleted_progress'), pct, deleted, totalStart));
+                $text.text(self.format(self.str('deleted_progress'), pct, cumulativeDeleted, totalStart));
 
                 // Update trash tab count live
                 $('#olimc-trash-count').text('(' + res.data.remaining + ')');
 
                 if (res.data.done) {
                     $fill.css('width', '100%');
-                    $text.text(self.format(self.str('done_deleted'), totalStart));
-                    self.toast(self.format(self.str('done_deleted'), totalStart), 'success');
+                    var message = self.format(self.str('done_deleted'), cumulativeDeleted);
+                    if (res.data.message) {
+                        message += ' ' + res.data.message;
+                    }
+                    $text.text(message);
+                    self.toast(message, 'success');
                     self.currentPage = 1;
                     self.loadResults();
                     setTimeout(function() {
@@ -921,7 +933,7 @@
                         self.resetEmptyTrashUI();
                     }, 3000);
                 } else {
-                    self.emptyTrashBatch(totalStart);
+                    self.emptyTrashBatch(totalStart, cumulativeDeleted);
                 }
             }).fail(function() {
                 self.toast(self.str('network_error'), 'error');

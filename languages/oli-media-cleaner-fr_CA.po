@@ -428,3 +428,8 @@ msgstr "Aucun fichier n'a été mis à la corbeille."
 
 msgid "No files were deleted."
 msgstr "Aucun fichier n'a été supprimé."
+
+msgid "%d protected file in trash cannot be deleted."
+msgid_plural "%d protected files in trash cannot be deleted."
+msgstr[0] "%d fichier protégé dans la corbeille ne peut pas être supprimé."
+msgstr[1] "%d fichiers protégés dans la corbeille ne peuvent pas être supprimés."
