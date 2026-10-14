@@ -196,27 +196,44 @@ class OLIMC_Admin {
      *
      * Shared helper used by both Admin and Scanner classes.
      *
+     * Glob syntax:
+     * - * matches within one directory segment (excludes /)
+     * - ** matches across directory segments (includes /)
+     * - Exact paths are case-sensitive
+     * - Glob patterns are case-insensitive
+     *
      * @param string $file    Uploads-relative file path.
-     * @param string $pattern Pattern (may contain * wildcards).
+     * @param string $pattern Pattern (may contain * or ** wildcards).
      * @return bool
      */
     public static function path_matches_pattern($file, $pattern) {
         $file = ltrim($file, '/');
         $pattern = ltrim($pattern, '/');
 
-        // Literal match (case-insensitive for file systems)
-        if (strcasecmp($file, $pattern) === 0) {
-            return true;
+        // Check if pattern contains wildcards
+        $has_wildcards = strpos($pattern, '*') !== false;
+
+        if (!$has_wildcards) {
+            // Exact match is case-sensitive
+            return $file === $pattern;
         }
 
-        // Glob match: * matches any characters including /
-        if (strpos($pattern, '*') !== false) {
-            // Quote everything except *, then replace \* with .*
-            $regex = '#^' . str_replace('\\*', '.*', preg_quote($pattern, '#')) . '$#i';
-            return (bool) preg_match($regex, $file);
-        }
-
-        return false;
+        // Glob match: case-insensitive
+        // ** matches across segments (including /), * matches within a segment (excluding /)
+        // First, escape the pattern and protect ** markers
+        $regex_pattern = preg_quote($pattern, '#');
+        
+        // Replace \*\* with a placeholder that won't conflict
+        $regex_pattern = str_replace('\\*\\*', '__DOUBLESTAR__', $regex_pattern);
+        
+        // Replace remaining \* (single stars) with [^/]* (matches within segment)
+        $regex_pattern = str_replace('\\*', '[^/]*', $regex_pattern);
+        
+        // Replace __DOUBLESTAR__ with .* (matches across segments)
+        $regex_pattern = str_replace('__DOUBLESTAR__', '.*', $regex_pattern);
+        
+        $regex = '#^' . $regex_pattern . '$#i';
+        return (bool) preg_match($regex, $file);
     }
 
     // ─── End protection system ────────────────────────────────────────
@@ -555,10 +572,11 @@ class OLIMC_Admin {
                                     placeholder="<?php esc_attr_e('Examples:
 2024/03/logo_osm_2019.png
 2023/*/header-*.jpg
+2024/**/receipts/*.pdf
 https://example.com/wp-content/uploads/2024/03/logo.png', 'oli-media-cleaner'); ?>"
                                 ><?php echo esc_textarea(get_option('olimc_protected_paths', '')); ?></textarea>
                                 <p class="description">
-                                    <?php esc_html_e('Use * wildcards for glob patterns. Paths are relative to the uploads directory. Derivatives (thumbnails, WebP) are automatically protected when the original is protected.', 'oli-media-cleaner'); ?>
+                                    <?php esc_html_e('Use * wildcards for glob patterns: * matches within one directory segment, ** matches across segments. Paths are relative to the uploads directory. Derivatives (thumbnails, WebP) are automatically protected when the original is protected.', 'oli-media-cleaner'); ?>
                                 </p>
                             </td>
                         </tr>
@@ -1612,79 +1630,120 @@ https://example.com/wp-content/uploads/2024/03/logo.png', 'oli-media-cleaner'); 
 
     /**
      * Empty trash: permanently delete trashed attachments in batches.
+     * 
+     * Excludes protected items in the query itself and paginates by ID to ensure progress.
      */
     public static function ajax_empty_trash_batch() {
         self::verify_request();
 
         global $wpdb;
         $batch_size = 50;
+        $last_id = isset($_POST['last_id']) ? (int) $_POST['last_id'] : 0;
 
-        // Get protected IDs to exclude from the query
+        // Get protected IDs (meta-based protection)
         $protected_meta_ids = $wpdb->get_col(
             "SELECT DISTINCT post_id FROM {$wpdb->postmeta}
              WHERE meta_key = '_olimc_protected' AND meta_value = '1'"
         );
 
+        // Get protected IDs (path-based protection)
+        $protected_path_ids = [];
+        $protected_paths = get_option('olimc_protected_paths', '');
+        if (!empty($protected_paths) && is_string($protected_paths)) {
+            $upload_dir = wp_upload_dir(null, false);
+            $base_url = isset($upload_dir['baseurl']) ? $upload_dir['baseurl'] : '';
+            
+            // Get all trashed attachment files
+            $trashed_files = $wpdb->get_results(
+                "SELECT p.ID as post_id, pm.meta_value as file_path
+                 FROM {$wpdb->posts} p
+                 INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+                 WHERE p.post_type = 'attachment'
+                 AND p.post_status = 'trash'
+                 AND pm.meta_key = '_wp_attached_file'"
+            );
+            
+            $lines = array_filter(array_map('trim', explode("\n", $protected_paths)));
+            $patterns = [];
+            foreach ($lines as $pattern) {
+                if (!empty($pattern)) {
+                    $patterns[] = self::normalize_protected_pattern($pattern, $base_url);
+                }
+            }
+            
+            foreach ($trashed_files as $row) {
+                foreach ($patterns as $pattern) {
+                    if (self::path_matches_pattern($row->file_path, $pattern)) {
+                        $protected_path_ids[] = (int) $row->post_id;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Combine all protected IDs
+        $all_protected_ids = array_unique(array_merge($protected_meta_ids, $protected_path_ids));
+        
         // Build exclusion clause
         $exclude_clause = '';
-        if (!empty($protected_meta_ids)) {
-            $protected_ids_str = implode(',', array_map('intval', $protected_meta_ids));
+        if (!empty($all_protected_ids)) {
+            $protected_ids_str = implode(',', array_map('intval', $all_protected_ids));
             $exclude_clause = " AND ID NOT IN ({$protected_ids_str})";
         }
 
-        // Also need to check protected paths - this is expensive, so we'll check after fetching
+        // Paginate by ID to ensure progress
+        $id_clause = $last_id > 0 ? " AND ID > {$last_id}" : '';
+
+        // Fetch next batch of deletable items
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
         $trashed_ids = $wpdb->get_col( $wpdb->prepare(
             "SELECT ID FROM {$wpdb->posts}
              WHERE post_type = 'attachment'
              AND post_status = 'trash'
              {$exclude_clause}
+             {$id_clause}
              ORDER BY ID ASC
              LIMIT %d",
             $batch_size
         ) );
 
-        // Filter out any items protected by path patterns
-        $filtered_ids = [];
-        foreach ($trashed_ids as $id) {
-            if (!self::is_attachment_protected((int) $id)) {
-                $filtered_ids[] = (int) $id;
-            }
-        }
-
+        // Count only deletable items (excluding all protected)
         $total_trashed = (int) wp_count_posts('attachment')->trash;
+        $protected_count = count($all_protected_ids);
+        $deletable_count = $total_trashed - $protected_count;
+        
         $deleted = 0;
+        $new_last_id = $last_id;
 
-        foreach ($filtered_ids as $id) {
-            if (self::delete_attachment_preserve_shared_files($id)) {
+        foreach ($trashed_ids as $id) {
+            if (self::delete_attachment_preserve_shared_files((int) $id)) {
                 $deleted++;
             }
+            $new_last_id = max($new_last_id, (int) $id);
         }
 
-        // Remaining excludes protected items
-        $remaining = max(0, $total_trashed - $deleted);
+        // Remaining counts only deletable items
+        $remaining = max(0, $deletable_count - $deleted);
 
-        // If we got IDs but deleted none, we're stuck on protected items - report done to avoid infinite loop
-        $stuck_on_protected = !empty($trashed_ids) && $deleted === 0 && $remaining > 0;
+        // Done when query returns no IDs (we've paginated past everything)
+        $done = empty($trashed_ids);
         
         $message = '';
-        if ($stuck_on_protected || ($remaining === 0 && count($filtered_ids) < count($trashed_ids))) {
-            $protected_count = count($trashed_ids) - count($filtered_ids);
-            if ($stuck_on_protected) {
-                // We hit a batch full of protected items
-                $message = sprintf(_n('%d protected file in trash cannot be deleted.', '%d protected files in trash cannot be deleted.', $remaining, 'oli-media-cleaner'), $remaining);
-            } elseif ($protected_count > 0) {
-                /* translators: %d: number of files */
-                $message = sprintf(_n('%d protected file skipped.', '%d protected files skipped.', $protected_count, 'oli-media-cleaner'), $protected_count);
-            }
+        if ($done && $protected_count > 0) {
+            /* translators: %d: number of files */
+            $message = sprintf(
+                _n('%d protected file in trash was not deleted.', '%d protected files in trash were not deleted.', $protected_count, 'oli-media-cleaner'),
+                $protected_count
+            );
         }
 
         wp_send_json_success([
             'deleted'   => $deleted,
             'remaining' => $remaining,
-            'total'     => $total_trashed,
-            'done'      => $remaining <= 0 || $stuck_on_protected,
+            'total'     => $deletable_count,
+            'done'      => $done,
             'message'   => $message,
+            'last_id'   => $new_last_id,
         ]);
     }
 
@@ -1771,7 +1830,7 @@ https://example.com/wp-content/uploads/2024/03/logo.png', 'oli-media-cleaner'); 
     }
 
     /**
-     * Save protection settings.
+     * Save protection settings and return match counts with warnings.
      */
     public static function ajax_save_protection_settings() {
         self::verify_request();
@@ -1779,8 +1838,59 @@ https://example.com/wp-content/uploads/2024/03/logo.png', 'oli-media-cleaner'); 
         $protected_paths = isset($_POST['protected_paths']) ? sanitize_textarea_field(wp_unslash($_POST['protected_paths'])) : '';
         update_option('olimc_protected_paths', $protected_paths, false);
 
+        // Calculate match counts for feedback
+        $warnings = [];
+        if (!empty($protected_paths)) {
+            global $wpdb;
+            $upload_dir = wp_upload_dir(null, false);
+            $base_url = isset($upload_dir['baseurl']) ? $upload_dir['baseurl'] : '';
+
+            // Get all attachment files
+            $files = $wpdb->get_results(
+                "SELECT post_id, meta_value FROM {$wpdb->postmeta}
+                 WHERE meta_key = '_wp_attached_file'"
+            );
+
+            $lines = array_filter(array_map('trim', explode("\n", $protected_paths)));
+            foreach ($lines as $pattern) {
+                if (empty($pattern)) {
+                    continue;
+                }
+                
+                $normalized = self::normalize_protected_pattern($pattern, $base_url);
+                if (empty($normalized)) {
+                    continue;
+                }
+
+                $match_count = 0;
+                foreach ($files as $row) {
+                    if (self::path_matches_pattern($row->meta_value, $normalized)) {
+                        $match_count++;
+                    }
+                }
+
+                if ($match_count > 0) {
+                    $warning_level = '';
+                    if ($match_count > 100) {
+                        $warning_level = 'very-broad';
+                    } elseif ($match_count > 20) {
+                        $warning_level = 'broad';
+                    }
+
+                    $warnings[] = [
+                        'pattern' => $pattern,
+                        'count' => $match_count,
+                        'level' => $warning_level,
+                    ];
+                }
+            }
+        }
+
+        $message = __('Protection settings saved.', 'oli-media-cleaner');
+        
         wp_send_json_success([
-            'message' => __('Protection settings saved.', 'oli-media-cleaner'),
+            'message' => $message,
+            'warnings' => $warnings,
         ]);
     }
 

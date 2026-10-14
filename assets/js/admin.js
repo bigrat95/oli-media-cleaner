@@ -892,16 +892,18 @@
             self.emptyTrashBatch(totalStart);
         },
 
-        emptyTrashBatch: function(totalStart, cumulativeDeleted) {
+        emptyTrashBatch: function(totalStart, cumulativeDeleted, lastId) {
             var self = this;
             var $fill = $('#olimc-progress-fill');
             var $text = $('#olimc-progress-text');
             
             if (typeof cumulativeDeleted === 'undefined') cumulativeDeleted = 0;
+            if (typeof lastId === 'undefined') lastId = 0;
 
             $.post(olimcObj.ajaxurl, {
                 action: 'olimc_empty_trash_batch',
-                nonce: olimcObj.nonce
+                nonce: olimcObj.nonce,
+                last_id: lastId
             }, function(res) {
                 if (!res.success) {
                     self.toast(self.str('error_deleting'), 'error');
@@ -911,7 +913,7 @@
 
                 if (totalStart === 0) totalStart = res.data.total || 1;
                 cumulativeDeleted += (res.data.deleted || 0);
-                var pct = Math.min(100, Math.round((cumulativeDeleted / totalStart) * 100));
+                var pct = totalStart > 0 ? Math.min(100, Math.round((cumulativeDeleted / totalStart) * 100)) : 100;
                 $fill.css('width', pct + '%');
                 $text.text(self.format(self.str('deleted_progress'), pct, cumulativeDeleted, totalStart));
 
@@ -933,7 +935,7 @@
                         self.resetEmptyTrashUI();
                     }, 3000);
                 } else {
-                    self.emptyTrashBatch(totalStart, cumulativeDeleted);
+                    self.emptyTrashBatch(totalStart, cumulativeDeleted, res.data.last_id || 0);
                 }
             }).fail(function() {
                 self.toast(self.str('network_error'), 'error');
@@ -976,6 +978,29 @@
             }, function(res) {
                 if (res.success) {
                     self.toast(res.data.message, 'success');
+                    
+                    // Display warnings about pattern match counts
+                    if (res.data.warnings && res.data.warnings.length > 0) {
+                        var warningHtml = '<div style="margin-top:10px;"><strong>Pattern Match Counts:</strong><ul style="margin:5px 0;">';
+                        res.data.warnings.forEach(function(w) {
+                            var style = '';
+                            var icon = '';
+                            if (w.level === 'very-broad') {
+                                style = ' style="color:#d63638;font-weight:bold;"';
+                                icon = '⚠️ ';
+                            } else if (w.level === 'broad') {
+                                style = ' style="color:#dba617;"';
+                                icon = '⚠ ';
+                            }
+                            warningHtml += '<li' + style + '>' + icon + self.escapeText(w.pattern) + ': ' + w.count + ' file(s)</li>';
+                        });
+                        warningHtml += '</ul></div>';
+                        
+                        // Show in a notice below the save button
+                        var $notice = $('<div class="notice notice-info" style="margin:10px 0;padding:10px;">' + warningHtml + '</div>');
+                        $('#olimc-save-protection-btn').after($notice);
+                        setTimeout(function() { $notice.fadeOut(function() { $(this).remove(); }); }, 10000);
+                    }
                 } else {
                     self.toast(res.data || self.str('error_saving'), 'error');
                 }
