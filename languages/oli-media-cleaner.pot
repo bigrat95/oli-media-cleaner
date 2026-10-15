@@ -357,3 +357,91 @@ msgid_plural "%d files restored."
 msgstr[0] ""
 msgstr[1] ""
 
+
+# Protection system strings (1.5.21)
+msgid "Protect from deletion"
+msgstr ""
+
+msgid "Protect this file from being listed as unused or deleted by Media Cleaner"
+msgstr ""
+
+msgid "When checked, Media Cleaner will never flag this file as unused and will refuse any deletion attempts."
+msgstr ""
+
+msgid "Protection Settings"
+msgstr ""
+
+msgid "Protect specific files from being listed as unused or deleted. Enter one path, URL, or glob pattern per line."
+msgstr ""
+
+msgid "Protected Paths"
+msgstr ""
+
+#. translators: Example patterns for protected paths
+msgid "Examples:\n2024/03/logo_osm_2019.png\n2023/*/header-*.jpg\nhttps://example.com/wp-content/uploads/2024/03/logo.png"
+msgstr ""
+
+msgid "Use * wildcards for glob patterns. Paths are relative to the uploads directory. Derivatives (thumbnails, WebP) are automatically protected when the original is protected."
+msgstr ""
+
+msgid "Per-File Protection"
+msgstr ""
+
+msgid "Individual files can also be protected using the \"Protect from deletion\" checkbox in the attachment edit screen or media modal."
+msgstr ""
+
+msgid "Save Protection Settings"
+msgstr ""
+
+msgid "Protection settings saved."
+msgstr ""
+
+msgid "This file is protected and cannot be trashed."
+msgstr ""
+
+msgid "This file is protected and cannot be deleted."
+msgstr ""
+
+#. translators: %d: number of files
+msgid "%d protected file skipped."
+msgid_plural "%d protected files skipped."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "No files were trashed."
+msgstr ""
+
+msgid "No files were deleted."
+msgstr ""
+
+msgid "%d protected file in trash cannot be deleted."
+msgid_plural "%d protected files in trash cannot be deleted."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %d: number of files
+msgid "%d protected file in trash was not deleted."
+msgid_plural "%d protected files in trash were not deleted."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: Example patterns for protected paths with ** syntax
+msgid "Examples:\n2024/03/logo_osm_2019.png\n2023/*/header-*.jpg\n2024/**/receipts/*.pdf\nhttps://example.com/wp-content/uploads/2024/03/logo.png"
+msgstr ""
+
+msgid "Use * wildcards for glob patterns: * matches within one directory segment, ** matches across segments. Paths are relative to the uploads directory. Derivatives (thumbnails, WebP) are automatically protected when the original is protected."
+msgstr ""
+
+msgid "Pattern Match Counts:"
+msgstr ""
+
+#. translators: %d: number of files
+msgid "%d file"
+msgstr ""
+
+#. translators: %d: number of files
+msgid "%d files"
+msgstr ""
+
+msgid "No matches (possible typo?)"
+msgstr ""

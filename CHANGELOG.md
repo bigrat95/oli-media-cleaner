@@ -1,0 +1,33 @@
+# Changelog
+
+All notable changes to Oli Media Cleaner will be documented in this file.
+
+## [1.5.21] - 2026-10-14
+
+### Added
+- Protection system for externally referenced files to prevent deletion of files still in use outside WordPress (e.g. receipts, external systems, direct URLs)
+- Global protected paths setting in the settings screen — protect files by path, URL, or glob pattern (one per line, normalized to uploads-relative paths)
+- Per-attachment "Protect from deletion" checkbox in the attachment edit screen and media modal (stored as `_olimc_protected` meta)
+- Server-side protection enforcement for all deletion paths (AJAX single/bulk, cron, background, Media Library)
+- Admin messages when protection prevents deletion
+- Full internationalization support (French and English strings)
+
+### Changed
+- Protected files are never listed as unused by the scan
+- Thumbnails and derivative files (.webp, .avif) are automatically protected when their original is protected
+
+### Technical
+- New option `olimc_protected_paths` (empty by default, multiline textarea)
+- New meta key `_olimc_protected` (boolean flag per attachment)
+- Protection checks integrated into `must_keep_attachment_files()` and scan logic
+- Glob pattern matching with * wildcards for flexible path protection
+- All sanitization, escaping, nonces, and capabilities follow WordPress.org guidelines
+- No inline scripts in the UI
+
+## [1.5.20] - Previous release
+- FIX: A file that another attachment still references is kept on every deletion path
+- FIX: The plugin's own options, transients, and meta are ignored while scanning
+- FIX: Edited-image backups in _wp_attachment_backup_sizes count as shared files
+
+## Earlier versions
+See readme.txt for full history.

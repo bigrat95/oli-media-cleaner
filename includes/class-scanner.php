@@ -43,6 +43,9 @@ class OLIMC_Scanner {
         $this->used_ids = [];
         $this->ensure_attachment_lookup();
 
+        // Mark protected items as used so they're never flagged as unused
+        $this->collect_protected_attachments();
+
         // AJAX and cron must call OLIMC_Acf_Meta_Scanner::step() instead. This
         // synchronous helper stops before max_execution_time on web requests.
         $engine   = new OLIMC_Acf_Meta_Scanner($this);
@@ -89,6 +92,101 @@ class OLIMC_Scanner {
             return microtime(true) + 3600;
         }
         return microtime(true) + max(5, $max - 5);
+    }
+
+    /**
+     * Mark all protected attachments as used.
+     */
+    private function collect_protected_attachments() {
+        foreach ($this->get_protected_attachment_ids() as $id) {
+            $this->used_ids[] = $id;
+        }
+    }
+
+    /**
+     * Get all protected attachment IDs (from meta and paths).
+     *
+     * @return int[]
+     */
+    public function get_protected_attachment_ids() {
+        global $wpdb;
+        $protected = [];
+
+        // Collect IDs with _olimc_protected meta
+        $protected_ids = $wpdb->get_col(
+            "SELECT DISTINCT post_id FROM {$wpdb->postmeta}
+             WHERE meta_key = '_olimc_protected'
+             AND meta_value = '1'"
+        );
+
+        if (!empty($protected_ids)) {
+            $protected = array_merge($protected, array_map('intval', $protected_ids));
+        }
+
+        // Collect IDs matching protected paths
+        $protected_paths = get_option('olimc_protected_paths', '');
+        if (empty($protected_paths) || !is_string($protected_paths)) {
+            return $protected;
+        }
+
+        $upload_dir = wp_upload_dir(null, false);
+        $base_url = isset($upload_dir['baseurl']) ? $upload_dir['baseurl'] : '';
+
+        // Get all attachment files
+        $files = $wpdb->get_results(
+            "SELECT post_id, meta_value FROM {$wpdb->postmeta}
+             WHERE meta_key = '_wp_attached_file'"
+        );
+
+        $lines = array_filter(array_map('trim', explode("\n", $protected_paths)));
+        $patterns = [];
+        foreach ($lines as $pattern) {
+            if (empty($pattern)) {
+                continue;
+            }
+            $patterns[] = $this->normalize_protected_pattern($pattern, $base_url);
+        }
+
+        foreach ($files as $row) {
+            $file = $row->meta_value;
+            foreach ($patterns as $pattern) {
+                if (OLIMC_Admin::path_matches_pattern($file, $pattern)) {
+                    $protected[] = (int) $row->post_id;
+                    break;
+                }
+            }
+        }
+
+        return array_unique($protected);
+    }
+
+    /**
+     * Normalize a protected pattern to uploads-relative path.
+     *
+     * @param string $pattern  Raw pattern (path, URL, or glob).
+     * @param string $base_url Upload base URL.
+     * @return string Normalized pattern.
+     */
+    private function normalize_protected_pattern($pattern, $base_url) {
+        $pattern = trim($pattern);
+        if (empty($pattern)) {
+            return '';
+        }
+
+        // Convert URL to path
+        if (preg_match('#^https?://#i', $pattern)) {
+            if (!empty($base_url) && strpos($pattern, $base_url) === 0) {
+                $pattern = substr($pattern, strlen($base_url));
+            } else {
+                // Try to extract path from URL
+                if (preg_match('#/wp-content/uploads/(.+)$#', $pattern, $m)) {
+                    $pattern = $m[1];
+                }
+            }
+        }
+
+        // Remove leading slash for consistency
+        return ltrim($pattern, '/');
     }
 
     /**

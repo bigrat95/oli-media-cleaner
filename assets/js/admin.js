@@ -217,6 +217,11 @@
                 self.saveCronSettings();
             });
 
+            // Protection settings
+            $('#olimc-save-protection-btn').on('click', function() {
+                self.saveProtectionSettings();
+            });
+
             // Sort by column header
             $(document).on('click', '.olimc-sortable', function() {
                 var col = $(this).data('sort');
@@ -756,10 +761,12 @@
             self.trashAllBatch(totalStart);
         },
 
-        trashAllBatch: function(totalStart) {
+        trashAllBatch: function(totalStart, cumulativeTrashed) {
             var self = this;
             var $fill = $('#olimc-progress-fill');
             var $text = $('#olimc-progress-text');
+            
+            if (typeof cumulativeTrashed === 'undefined') cumulativeTrashed = 0;
 
             $.post(olimcObj.ajaxurl, {
                 action: 'olimc_trash_all_batch',
@@ -772,18 +779,22 @@
                 }
 
                 if (totalStart === 0) totalStart = res.data.total || 1;
-                var trashed = totalStart - res.data.remaining;
-                var pct = Math.min(100, Math.round((trashed / totalStart) * 100));
+                cumulativeTrashed += (res.data.trashed || 0);
+                var pct = Math.min(100, Math.round((cumulativeTrashed / totalStart) * 100));
                 $fill.css('width', pct + '%');
-                $text.text(self.format(self.str('trashed_progress'), pct, trashed, totalStart));
+                $text.text(self.format(self.str('trashed_progress'), pct, cumulativeTrashed, totalStart));
 
                 // Update tab counts live
                 $('#olimc-unused-count').text('(' + res.data.remaining + ')');
 
                 if (res.data.done) {
                     $fill.css('width', '100%');
-                    $text.text(self.format(self.str('done_trashed'), totalStart));
-                    self.toast(self.format(self.str('done_trashed'), totalStart), 'success');
+                    var message = self.format(self.str('done_trashed'), cumulativeTrashed);
+                    if (res.data.message) {
+                        message += ' ' + res.data.message;
+                    }
+                    $text.text(message);
+                    self.toast(message, 'success');
                     self.currentPage = 1;
                     self.loadResults();
                     setTimeout(function() {
@@ -791,7 +802,7 @@
                         self.resetTrashAllUI();
                     }, 3000);
                 } else {
-                    self.trashAllBatch(totalStart);
+                    self.trashAllBatch(totalStart, cumulativeTrashed);
                 }
             }).fail(function() {
                 self.toast(self.str('network_error'), 'error');
@@ -881,14 +892,18 @@
             self.emptyTrashBatch(totalStart);
         },
 
-        emptyTrashBatch: function(totalStart) {
+        emptyTrashBatch: function(totalStart, cumulativeDeleted, lastId) {
             var self = this;
             var $fill = $('#olimc-progress-fill');
             var $text = $('#olimc-progress-text');
+            
+            if (typeof cumulativeDeleted === 'undefined') cumulativeDeleted = 0;
+            if (typeof lastId === 'undefined') lastId = 0;
 
             $.post(olimcObj.ajaxurl, {
                 action: 'olimc_empty_trash_batch',
-                nonce: olimcObj.nonce
+                nonce: olimcObj.nonce,
+                last_id: lastId
             }, function(res) {
                 if (!res.success) {
                     self.toast(self.str('error_deleting'), 'error');
@@ -897,18 +912,22 @@
                 }
 
                 if (totalStart === 0) totalStart = res.data.total || 1;
-                var deleted = totalStart - res.data.remaining;
-                var pct = Math.min(100, Math.round((deleted / totalStart) * 100));
+                cumulativeDeleted += (res.data.deleted || 0);
+                var pct = totalStart > 0 ? Math.min(100, Math.round((cumulativeDeleted / totalStart) * 100)) : 100;
                 $fill.css('width', pct + '%');
-                $text.text(self.format(self.str('deleted_progress'), pct, deleted, totalStart));
+                $text.text(self.format(self.str('deleted_progress'), pct, cumulativeDeleted, totalStart));
 
                 // Update trash tab count live
                 $('#olimc-trash-count').text('(' + res.data.remaining + ')');
 
                 if (res.data.done) {
                     $fill.css('width', '100%');
-                    $text.text(self.format(self.str('done_deleted'), totalStart));
-                    self.toast(self.format(self.str('done_deleted'), totalStart), 'success');
+                    var message = self.format(self.str('done_deleted'), cumulativeDeleted);
+                    if (res.data.message) {
+                        message += ' ' + res.data.message;
+                    }
+                    $text.text(message);
+                    self.toast(message, 'success');
                     self.currentPage = 1;
                     self.loadResults();
                     setTimeout(function() {
@@ -916,7 +935,7 @@
                         self.resetEmptyTrashUI();
                     }, 3000);
                 } else {
-                    self.emptyTrashBatch(totalStart);
+                    self.emptyTrashBatch(totalStart, cumulativeDeleted, res.data.last_id || 0);
                 }
             }).fail(function() {
                 self.toast(self.str('network_error'), 'error');
@@ -942,6 +961,60 @@
                 if (res.success) {
                     self.toast(res.data.message, 'success');
                     $('#olimc-next-run').text(res.data.next_run);
+                } else {
+                    self.toast(res.data || self.str('error_saving'), 'error');
+                }
+            });
+        },
+
+        saveProtectionSettings: function() {
+            var self = this;
+            var protectedPaths = $('#olimc-protected-paths').val();
+
+            $.post(olimcObj.ajaxurl, {
+                action: 'olimc_save_protection_settings',
+                nonce: olimcObj.nonce,
+                protected_paths: protectedPaths
+            }, function(res) {
+                if (res.success) {
+                    self.toast(res.data.message, 'success');
+                    
+                    // Display warnings about pattern match counts
+                    if (res.data.warnings && res.data.warnings.length > 0) {
+                        var warningHtml = '<div style="margin-top:10px;"><strong>' + self.str('pattern_match_counts') + '</strong><ul style="margin:5px 0;">';
+                        res.data.warnings.forEach(function(w) {
+                            var style = '';
+                            var icon = '';
+                            var countText = '';
+                            
+                            if (w.count === 0) {
+                                // Zero matches - possible typo
+                                style = ' style="color:#d63638;"';
+                                icon = '⚠️ ';
+                                countText = self.str('pattern_no_matches');
+                            } else {
+                                // Format count using the translated string with %d placeholder
+                                var template = w.count === 1 ? self.str('pattern_matches_file') : self.str('pattern_matches_files');
+                                countText = self.format(template, w.count);
+                                
+                                if (w.level === 'very-broad') {
+                                    style = ' style="color:#d63638;font-weight:bold;"';
+                                    icon = '⚠️ ';
+                                } else if (w.level === 'broad') {
+                                    style = ' style="color:#dba617;"';
+                                    icon = '⚠ ';
+                                }
+                            }
+                            
+                            warningHtml += '<li' + style + '>' + icon + self.escapeText(w.pattern) + ': ' + countText + '</li>';
+                        });
+                        warningHtml += '</ul></div>';
+                        
+                        // Show in a notice below the save button
+                        var $notice = $('<div class="notice notice-info" style="margin:10px 0;padding:10px;">' + warningHtml + '</div>');
+                        $('#olimc-save-protection-btn').after($notice);
+                        setTimeout(function() { $notice.fadeOut(function() { $(this).remove(); }); }, 10000);
+                    }
                 } else {
                     self.toast(res.data || self.str('error_saving'), 'error');
                 }
